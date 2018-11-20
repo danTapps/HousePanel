@@ -98,6 +98,7 @@ preferences {
     section ("Other Sensors and Options") {
     	input "mymusics", "capability.musicPlayer", hideWhenEmpty: true, multiple: true, required: false, title: "Music Players"
     	input "mysmokes", "capability.smokeDetector", hideWhenEmpty: true, multiple: true, required: false, title: "Smoke Detectors"
+	input "mypower", "capability.powerMeter", multiple: true, required: false, title: "Power Meters"
     	input "myothers", "capability.sensor", multiple: true, required: false, title: "Other and Virtual Sensors"
     }
 }
@@ -289,6 +290,10 @@ def getOther(swid, item=null) {
     getThing(myothers, swid, item)
 }
 
+def getPower(swid, item=null) {
+    getThing(mypower, swid, item)
+}
+
 def getmyMode(swid, item=null) {
     def curmode = location.getCurrentMode()
     def curmodename = curmode.getName()
@@ -316,6 +321,13 @@ def getBlank(swid, item=null) {
 
 def getImage(swid, item=null) {
     def resp = [name: "Image ${swid}", url: "${swid}"]
+    return resp
+}
+
+def getRoutine(swid, item=null) {
+    def routines = location.helloHome?.getPhrases()
+    def routine = item ? item : routines.find{it.id == swid}
+    def resp = routine ? [name: routine.label, label: routine.label] : false
     return resp
 }
 
@@ -374,8 +386,22 @@ def getThing(things, swid, item=null) {
     def resp = item ? [:] : false
     if ( item ) {
         resp.put("name",item.displayName)
-    
-            item.capabilities.each {cap ->
+		//log.debug "HHDEB ${item.displayName} ${item.supportedAttributes}"
+//    		if (swid == "19") log.debug "HHDEB capabilities start"
+			item.supportedAttributes?.each {attr ->
+					try {
+                        def othername = attr.getName()
+//						if (swid == "19") log.debug "HHDEB ---- ${othername}"
+                        def othervalue = item.currentValue(othername)
+//						if (swid == "19") log.debug "HHDEB ---- ${othervalue}"
+                        resp.put(othername,othervalue)
+                    } catch (ex) {
+                        if ( state.dologging ) {
+                            log.warn "Attempt to read attribute for ${swid} failed"
+                        }
+                    }				
+			}
+/*            item.capabilities.each {cap ->
                 // def capname = cap.getName()
                 cap.attributes?.each {attr ->
                     try {
@@ -388,7 +414,8 @@ def getThing(things, swid, item=null) {
                         }
                     } 
                 }
-            }
+            }*/
+//			if (swid == "19") log.debug "HHDEB capabilities end"
             // add commands other than standard ones
             item.supportedCommands.each { comm ->
                 try {
@@ -419,6 +446,8 @@ def getThings(resp, things, thingtype) {
         log.debug "Number of things of type ${thingtype} = ${n}"
     }
     things?.each {
+		if (thingtype == "switchlevel")
+//		log.debug "HHDEB thing: ${it} ${it.id}"
         def val = getThing(things, it.id, it)
         resp << [name: it.displayName, id: it.id, value: val, type: thingtype]
     }
@@ -430,34 +459,57 @@ def getThings(resp, things, thingtype) {
 def getAllThings() {
 
     def resp = []
+//	log.debug "HHDEB | getSwitches"
     resp = getSwitches(resp)
+//	log.debug "HHDEB | getDimmers"
     resp = getDimmers(resp)
+//	log.debug "HHDEB | getMomentaries"
     resp = getMomentaries(resp)
+//	log.debug "HHDEB | getLights"
     resp = getLights(resp)
+//	log.debug "HHDEB | getBulbs"
     resp = getBulbs(resp)
+//	log.debug "HHDEB | getContacts"
     resp = getContacts(resp)
+//	log.debug "HHDEB | getDoors"
     resp = getDoors(resp)
+//	log.debug "HHDEB | getLocks"
     resp = getLocks(resp)
+//	log.debug "HHDEB | getSensors"
     resp = getSensors(resp)
+//	log.debug "HHDEB | getPresences"
     resp = getPresences(resp)
+//	log.debug "HHDEB | getThermostats"
     resp = getThermostats(resp)
+//	log.debug "HHDEB | getTemperatures"
     resp = getTemperatures(resp)
+//	log.debug "HHDEB | getIlluminances"
     resp = getIlluminances(resp)
+//	log.debug "HHDEB | getValves"
     resp = getValves(resp)
+//	log.debug "HHDEB | getWaters"
     resp = getWaters(resp)
+//	log.debug "HHDEB | getMusics"
     resp = getMusics(resp)
+//	log.debug "HHDEB | getSmokes"
     resp = getSmokes(resp)
     resp = getModes(resp)
     resp = getHsmStates(resp)
+//	log.debug "HHDEB | getOthers"
     resp = getOthers(resp)
+//	log.debug "HHDEB | getBlanks"
     resp = getBlanks(resp)
+//	log.debug "HHDEB | getImages"
     resp = getImages(resp)
+    resp = getPowers(resp)
 
     // optionally include pistons based on user option
     if (state.usepistons) {
+//		log.debug "HHDEB | getPistons"
         resp = getPistons(resp)
     }
-    
+//	log.debug "HHDEB | done"
+
     return resp
 }
 // this returns just a single active mode, not the list of available modes
@@ -625,6 +677,17 @@ def getOthers(resp) {
     return resp
 }
 
+def getPowers(resp) {
+    def n  = mypower ? mypower.size() : 0
+    if ( n > 0 && state.dologging ) { log.debug "Number of selected power sensors = ${n}" }
+    mypower?.each {
+        def thatid = it.id;
+        def multivalue = getThing(mypower, thatid, it)
+        resp << [name: it.displayName, id: thatid, value: multivalue, type: "power"]
+    }
+    return resp
+}
+
 def autoType(swid) {
     def swtype
     if ( mydimmers?.find {it.id == swid } ) { swtype= "switchlevel" }
@@ -645,6 +708,7 @@ def autoType(swid) {
     else if ( myilluminances?.find {it.id == swid } ) { swtype= "illuminance" }
     else if ( mysmokes?.find {it.id == swid } ) { swtype= "smoke" }
     else if ( mytemperatures?.find {it.id == swid } ) { swtype= "temperature" }
+    else if ( mypower?.find {it.id == swid } ) { swtype= "power" }
     else if ( myothers?.find {it.id == swid } ) { swtype= "other" }
     else if ( swid=="hsm" ) { swtype= "hsm" }
     else if ( swid=="hm1x1" || swid=="hm1x2" || swid=="hm2x1" || swid=="hm2x2" ) { swtype= "mode" }
@@ -747,6 +811,7 @@ def doAction() {
 }
 
 def doQuery() {
+//	log.debug "HHDEB -------- doQuery start ${params}"
     def swid = params.swid
     def swtype = params.swtype
     def cmdresult = false
@@ -823,11 +888,13 @@ def doQuery() {
     case "mode" :
         cmdresult = getmyMode(swid)
         break
-    case "hsm" :
-        cmdresult = getHsmState(swid)
+    case "power":
+    	cmdresult = getPower(swid)
+	break
         break
 
     }
+//	log.debug "HHDEB -------- doQuery end"
     return cmdresult
 }
 

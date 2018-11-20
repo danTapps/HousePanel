@@ -4,6 +4,7 @@ var priorOpmode = "Operate";
 var returnURL = "housepanel.php";
 var dragZindex = 1;
 var pagename = "main";
+var mySwitchTimeout;
 
 // set this global variable to true to disable actions
 // I use this for testing the look and feel on a public hosting location
@@ -17,6 +18,26 @@ Number.prototype.pad = function(size) {
     var s = String(this);
     while (s.length < (size || 2)) {s = "0" + s;}
     return s;
+}
+
+function clearMainTimeout()
+{
+  if (mySwitchTimeout != null)
+  {
+    clearTimeout(mySwitchTimeout);
+  }
+  mySwitchTimeout = null;
+}
+
+function startMainTimeout()
+{
+  if (mySwitchTimeout== null)
+ 	  mySwitchTimeout = setTimeout(function(){ 
+    try {
+      $("#ui-id-1").click();
+      mySwitchTimeout = null;
+    } catch (e) {}
+  }, 30000);
 }
 
 function setCookie(cname, cvalue, exdays) {
@@ -1255,7 +1276,7 @@ function updateTile(aid, presult) {
                 value = fixTrack(value);
             }
             // handle weather icons
-            else if ( key==="weatherIcon" || key==="forecastIcon") {
+            else if ( key==="weatherIcon" || key==="forecastIcon" || key==="visualWithText") {
                 if ( value.substring(0,3) === "nt_") {
                     value = value.substring(3);
                 }
@@ -1280,6 +1301,9 @@ function updateTile(aid, presult) {
             } else if ( key === "skin" && value.startsWith("CoolClock") ) {
                 value = '<canvas id="clock_' + aid + '" class="' + value + '"></canvas>';
                 isclock = true;
+            } else if ( key === "temperature") {
+              console.log (value + "°");
+              $(targetid).html(value + "°");
             } else if ( oldclass && oldvalue && value &&
                      key!=="name" &&
                      $.isNumeric(value)===false && 
@@ -1326,6 +1350,9 @@ function setupTabclick() {
     $("a.ui-tabs-anchor").click(function() {
         // save this tab for default next time
         var defaultTab = $(this).attr("id");
+        //console.log("Tab: " + defaultTab);
+        clearMainTimeout();
+        startMainTimeout();
         if ( defaultTab ) {
             setCookie( 'defaultTab', defaultTab, 30 );
         }
@@ -1341,7 +1368,7 @@ function timerSetup(hubs) {
         var token = hub.hubAccess;
         var timerval = 60000;
         if ( hubType==="Hubitat" ) {
-            timerval = 5000;
+            timerval = 10000;
         }
         console.log("hub #" + hubnum + " timer = " + timerval + " hub = " + strObject(hub));
 
@@ -1358,14 +1385,23 @@ function timerSetup(hubs) {
                 setTimeout(function() {updarray.myMethod();}, this[1]);
                 return; 
             }
-
+            console.log("refresh everything from " + returnURL + " id: " + that[0] + " type: " + that[0] + " hubnum: " + that[2]);
             try {
-                $.post(returnURL, 
-                    {useajax: "doquery", id: that[0], type: that[0], value: "none", attr: "none", hubnum: that[2]},
+              $.ajax({
+                type: "POST",
+		            url: returnURL,
+		            data: {useajax: "doquery", id: that[0], type: that[0], value: "none", attr: "none", hubnum: that[2]},
+		            dataType: "json",
+		            timeout: timerval-1000,
+		            error: function(jqXHR, textStatus, errorThrown) {
+		              if(textStatus==="timeout") {
+		                //do something on timeout
+	            	  } 
+		            },
+		            success: 		    
                     function (presult, pstatus) {
                         if (pstatus==="success" && presult!==undefined ) {
-                            // console.log("Success polling hub #" + that[2] + ". Returned "+ Object.keys(presult).length+ " items: " + strObject(presult));
-
+                            //console.log("Success polling hub #" + that[2] + ". Returned "+ Object.keys(presult).length+ " items: " + strObject(presult));
                             // go through all tiles and update
                             try {
                             $('div.panel div.thing').each(function() {
@@ -1395,8 +1431,8 @@ function timerSetup(hubs) {
                             });
                             } catch (err) { console.error("Polling error", err.message); }
                         }
-                    }, "json"
-                );
+                    }
+                });
             } catch(err) {
                 console.error ("Polling error", err.message);
             }

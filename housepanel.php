@@ -141,7 +141,7 @@ define('DEBUG5', false); // debug print included in output table
 define('DEBUG6', false); // debug misc
 define('DEBUG7', false); // debug misc
 
-define("DONATE", true);  // turn on or off the donate button
+define("DONATE", false);  // turn on or off the donate button
 
 // set error reporting to just show fatal errors
 error_reporting(E_ERROR);
@@ -259,7 +259,14 @@ function curl_call($host, $headertype=FALSE, $nvpstr=FALSE, $calltype="GET")
         if ($calltype!="GET") { curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $calltype); }
         if ($nvpstr) { curl_setopt($ch, CURLOPT_POSTFIELDS, $nvpstr); }
     }
-
+	error_log("----- curl");
+	error_log("| CURLOPT_URL " . $host);
+	error_log("| CURLOPT_HTTPHEADER " . print_r($headertype, true));
+	error_log("| calltype " . $calltype);
+	if ($nvpstr)
+		error_log("| CURLOPT_POSTFIELDS " . print_r($nvpstr, true));
+	
+	error_log("----- end");
 	//getting response from server
     $response = curl_exec($ch);
     
@@ -511,6 +518,8 @@ function getAuthPage($returl, $hpcode, $hubset=null, $newthings=null) {
             $kiosk = false;
             $rewrite = true;
         }
+	if (isset($_GET['kiosk']))
+		$kiosk = $_GET['kiosk'];
         if ( $kiosk === "true" || $kiosk==="yes" || $kiosk==="1" ) {
             $kiosk = true;
         } else {
@@ -1088,7 +1097,12 @@ function makeThing($i, $kindex, $thesensor, $panelname, $postop=0, $posleft=0, $
     $postop= intval($postop);
     $posleft = intval($posleft);
     $zindex = intval($zindex);;
-    
+
+    if ($thingname==="Weather")
+    {
+    	$thingtype="weather";
+	error_log("Weather: " . print_r($thingvalue, true));
+    }
     if ( $wysiwyg ) {
         $idtag = $wysiwyg;
     } else {
@@ -1121,8 +1135,8 @@ function makeThing($i, $kindex, $thesensor, $panelname, $postop=0, $posleft=0, $
         $tc.= putElement($kindex, $i, 0, $thingtype, $thingname, "name");
         $tc.= putElement($kindex, $i, 1, $thingtype, $thingvalue["city"], "city");
         $tc.= "<div class=\"weather_temps\">";
-        $tc.= putElement($kindex, $i, 2, $thingtype, $thingvalue["temperature"], "temperature");
-        $tc.= putElement($kindex, $i, 3, $thingtype, $thingvalue["feelsLike"], "feelsLike");
+        $tc.= putElement($kindex, $i, 2, $thingtype, $thingvalue["temperature"] . "°", "temperature");
+//        $tc.= putElement($kindex, $i, 3, $thingtype, $thingvalue["feelsLike"] . "°", "feelsLike");
         $tc.= "</div>";
         $tc.= "<div class=\"weather_icons\">";
         $wiconstr = $thingvalue["weatherIcon"];
@@ -1133,10 +1147,9 @@ function makeThing($i, $kindex, $thesensor, $panelname, $postop=0, $posleft=0, $
         if (substr($ficonstr,0,3) === "nt_") {
             $ficonstr = substr($ficonstr,3);
         }
-        $tc.= putElement($kindex, $i, 4, $thingtype, $wiconstr, "weatherIcon");
-        $tc.= putElement($kindex, $i, 5, $thingtype, $ficonstr, "forecastIcon");
+        $tc.= putElement($kindex, $i, 4, $thingtype, $wiconstr, "visualWithText");
         $tc.= "</div>";
-        $tc.= putElement($kindex, $i, 6, $thingtype, "Sunrise: " . $thingvalue["localSunrise"] . " Sunset: " . $thingvalue["localSunset"], "sunriseset");
+        $tc.= putElement($kindex, $i, 5, $thingtype, "Sunrise: " . $thingvalue["localSunrise"] . " Sunset: " . $thingvalue["localSunset"], "sunriseset");
         $j = 7;
         foreach($thingvalue as $tkey => $tval) {
             if ($tkey!=="temperature" &&
@@ -1147,9 +1160,29 @@ function makeThing($i, $kindex, $thesensor, $panelname, $postop=0, $posleft=0, $
                 $tkey!=="forecastIcon" &&
                 $tkey!=="alertKeys" &&
                 $tkey!=="localSunrise" &&
-                $tkey!=="localSunset" ) 
+                $tkey!=="localSunset" &&
+                $tkey!=="visualWithText" &&
+                $tkey!=="visualDayPlus1WithText" &&
+                $tkey!=="cCf" &&
+                $tkey!=="cloud" &&
+                $tkey!=="condition_code" 
+		&& $tkey!=="condition_icon"
+                && $tkey!=="condition_icon_url"
+                && $tkey!=="condition_text"
+                && $tkey!=="country"
+                && $tkey!=="feelslike_c"
+                && $tkey!=="feelslike_f"
+                && $tkey!==""
+                && $tkey!==""
+                && $tkey!==""
+                && $tkey!==""
+                && $tkey!==""
+                && $tkey!==""
+                && $tkey!==""
+
+		) 
             {
-                $tc.= putElement($kindex, $i, $j, $thingtype, $tval, $tkey);
+//                $tc.= putElement($kindex, $i, $j, $thingtype, $tval, $tkey);
                 $j++;
             }
         }
@@ -1230,7 +1263,12 @@ function makeThing($i, $kindex, $thesensor, $panelname, $postop=0, $posleft=0, $
                 // also skip the checkInterval since we never display this
                 // and don't repeat the color element since done manually above
                 if ( strpos($tkey, "DeviceWatch-") === FALSE &&
-                     strpos($tkey, "checkInterval") === FALSE && $tkey!=="color" ) { 
+                     strpos($tkey, "checkInterval") === FALSE 
+		     && $tkey!=="color" 
+		     && $tkey!=="name"
+		     && strlen($tval)!==0
+		   ) 
+		{ 
                     $tc.= putElement($kindex, $i, $j, $thingtype, $tval, $tkey, $subtype, $bgcolor);				
                     $j++;									
                 }
@@ -2042,7 +2080,7 @@ function getTypes() {
                         "motion", "lock", "thermostat", "temperature", "music", "valve",
                         "door", "illuminance", "smoke", "water",
                         "weather", "presence", "mode", "shm", "hsm", "piston", "other",
-                        "clock","blank","image","frame","video","custom");
+                        "clock","blank","image","frame","video","custom", "power");
     return $thingtypes;
 }
 
@@ -3591,6 +3629,8 @@ function is_ssl() {
             
             // get kiosk mode
             $kiosk = $configoptions["kiosk"];
+	    if (isset($_GET['kiosk']))
+		$kiosk = $_GET['kiosk'];
             $kioskmode = ($kiosk===true || strtolower($kiosk)==="yes" || 
                           $kiosk==="true" || intval($kiosk)===1 );
 
