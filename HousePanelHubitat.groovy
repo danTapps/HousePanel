@@ -77,28 +77,29 @@ preferences {
         input "mybulbs", "capability.colorControl", hideWhenEmpty: true, multiple: true, required: false, title: "Bulbs"
     }
     section ("Motion and Presence") {
-    	input "mypresences", "capability.presenceSensor", hideWhenEmpty: true, multiple: true, required: false, title: "Presence"
-    	input "mysensors", "capability.motionSensor", multiple: true, required: false, title: "Motion"
+        input "mypresences", "capability.presenceSensor", hideWhenEmpty: true, multiple: true, required: false, title: "Presence"
+        input "mysensors", "capability.motionSensor", multiple: true, required: false, title: "Motion"
     }
     section ("Door and Contact Sensors") {
-    	input "mycontacts", "capability.contactSensor", hideWhenEmpty: true, multiple: true, required: false, title: "Contact Sensors"
-    	input "mydoors", "capability.doorControl", hideWhenEmpty: true, multiple: true, required: false, title: "Doors"
-    	input "mylocks", "capability.lock", hideWhenEmpty: true, multiple: true, required: false, title: "Locks"
+        input "mycontacts", "capability.contactSensor", hideWhenEmpty: true, multiple: true, required: false, title: "Contact Sensors"
+        input "mydoors", "capability.doorControl", hideWhenEmpty: true, multiple: true, required: false, title: "Doors"
+        input "mylocks", "capability.lock", hideWhenEmpty: true, multiple: true, required: false, title: "Locks"
     }
     section ("Thermostat & Environment") {
-    	input "mythermostats", "capability.thermostat", hideWhenEmpty: true, multiple: true, required: false, title: "Thermostats"
-    	input "mytemperatures", "capability.temperatureMeasurement", hideWhenEmpty: true, multiple: true, required: false, title: "Temperature Measures"
-    	input "myilluminances", "capability.illuminanceMeasurement", hideWhenEmpty: true, multiple: true, required: false, title: "Illuminances"
-    	// input "myweathers", "device.smartweatherStationTile", hideWhenEmpty: true, title: "Weather tile", multiple: false, required: false
+        input "mythermostats", "capability.thermostat", hideWhenEmpty: true, multiple: true, required: false, title: "Thermostats"
+        input "mytemperatures", "capability.temperatureMeasurement", hideWhenEmpty: true, multiple: true, required: false, title: "Temperature Measures"
+        input "myilluminances", "capability.illuminanceMeasurement", hideWhenEmpty: true, multiple: true, required: false, title: "Illuminances"
+        // input "myweathers", "device.smartweatherStationTile", hideWhenEmpty: true, title: "Weather tile", multiple: false, required: false
     }
     section ("Water") {
-    	input "mywaters", "capability.waterSensor", hideWhenEmpty: true, multiple: true, required: false, title: "Water Sensors"
-    	input "myvalves", "capability.valve", hideWhenEmpty: true, multiple: true, required: false, title: "Sprinklers"
+        input "mywaters", "capability.waterSensor", hideWhenEmpty: true, multiple: true, required: false, title: "Water Sensors"
+        input "myvalves", "capability.valve", hideWhenEmpty: true, multiple: true, required: false, title: "Sprinklers"
     }
     section ("Other Sensors and Options") {
-    	input "mymusics", "capability.musicPlayer", hideWhenEmpty: true, multiple: true, required: false, title: "Music Players"
-    	input "mysmokes", "capability.smokeDetector", hideWhenEmpty: true, multiple: true, required: false, title: "Smoke Detectors"
-    	input "myothers", "capability.sensor", multiple: true, required: false, title: "Other and Virtual Sensors"
+        input "mymusics", "capability.musicPlayer", hideWhenEmpty: true, multiple: true, required: false, title: "Music Players"
+        input "mysmokes", "capability.smokeDetector", hideWhenEmpty: true, multiple: true, required: false, title: "Smoke Detectors"
+    input "mypower", "capability.powerMeter", multiple: true, required: false, title: "Power Meters"
+        input "myothers", "capability.sensor", multiple: true, required: false, title: "Other and Virtual Sensors"
     }
 }
 
@@ -141,8 +142,8 @@ def initialize() {
 
 def configureHub() {
     if ( ! state.accessToken ) {
-    	createAccessToken(); 
-	log.debug "Creating new accessToken ..."
+        createAccessToken(); 
+    log.debug "Creating new accessToken ..."
     }
     
     // get the cloud and local access points
@@ -282,11 +283,15 @@ def getTemperature(swid, item=null) {
 }
 
 def getWeather(swid, item=null) {
-	getDevice(myweathers, swid, item)
+    getDevice(myweathers, swid, item)
 }
 
 def getOther(swid, item=null) {
     getThing(myothers, swid, item)
+}
+
+def getPower(swid, item=null) {
+    getThing(mypower, swid, item)
 }
 
 def getmyMode(swid, item=null) {
@@ -319,6 +324,13 @@ def getImage(swid, item=null) {
     return resp
 }
 
+def getRoutine(swid, item=null) {
+    def routines = location.helloHome?.getPhrases()
+    def routine = item ? item : routines.find{it.id == swid}
+    def resp = routine ? [name: routine.label, label: routine.label] : false
+    return resp
+}
+
 // change pistonName to name to be consistent
 // but retain original for backward compatibility reasons
 def getPiston(swid, item=null) {
@@ -331,16 +343,16 @@ def getPiston(swid, item=null) {
 def getDevice(mydevices, swid, item=null) {
     def resp = false
     if ( mydevices ) {
-    	item = item ? item : mydevices.find {it.id == swid }
-    	if (item) {
-			resp = [:]
-			def attrs = item.getSupportedAttributes()
-			attrs.each {att ->
-	            def attname = att.name
-    	        def attval = item.currentValue(attname)
-        	    resp.put(attname,attval)
-    		}
-    	}
+        item = item ? item : mydevices.find {it.id == swid }
+        if (item) {
+            resp = [:]
+            def attrs = item.getSupportedAttributes()
+            attrs.each {att ->
+                def attname = att.name
+                def attval = item.currentValue(attname)
+                resp.put(attname,attval)
+            }
+        }
     }
     return resp
 }
@@ -374,8 +386,22 @@ def getThing(things, swid, item=null) {
     def resp = item ? [:] : false
     if ( item ) {
         resp.put("name",item.displayName)
-    
-            item.capabilities.each {cap ->
+        //log.debug "HHDEB ${item.displayName} ${item.supportedAttributes}"
+//          if (swid == "19") log.debug "HHDEB capabilities start"
+            item.supportedAttributes?.each {attr ->
+                    try {
+                        def othername = attr.getName()
+//                      if (swid == "19") log.debug "HHDEB ---- ${othername}"
+                        def othervalue = item.currentValue(othername)
+//                      if (swid == "19") log.debug "HHDEB ---- ${othervalue}"
+                        resp.put(othername,othervalue)
+                    } catch (ex) {
+                        if ( state.dologging ) {
+                            log.warn "Attempt to read attribute for ${swid} failed"
+                        }
+                    }               
+            }
+/*            item.capabilities.each {cap ->
                 // def capname = cap.getName()
                 cap.attributes?.each {attr ->
                     try {
@@ -388,7 +414,8 @@ def getThing(things, swid, item=null) {
                         }
                     } 
                 }
-            }
+            }*/
+//          if (swid == "19") log.debug "HHDEB capabilities end"
             // add commands other than standard ones
             item.supportedCommands.each { comm ->
                 try {
@@ -419,6 +446,8 @@ def getThings(resp, things, thingtype) {
         log.debug "Number of things of type ${thingtype} = ${n}"
     }
     things?.each {
+        if (thingtype == "switchlevel")
+//      log.debug "HHDEB thing: ${it} ${it.id}"
         def val = getThing(things, it.id, it)
         resp << [name: it.displayName, id: it.id, value: val, type: thingtype]
     }
@@ -430,34 +459,57 @@ def getThings(resp, things, thingtype) {
 def getAllThings() {
 
     def resp = []
+//  log.debug "HHDEB | getSwitches"
     resp = getSwitches(resp)
+//  log.debug "HHDEB | getDimmers"
     resp = getDimmers(resp)
+//  log.debug "HHDEB | getMomentaries"
     resp = getMomentaries(resp)
+//  log.debug "HHDEB | getLights"
     resp = getLights(resp)
+//  log.debug "HHDEB | getBulbs"
     resp = getBulbs(resp)
+//  log.debug "HHDEB | getContacts"
     resp = getContacts(resp)
+//  log.debug "HHDEB | getDoors"
     resp = getDoors(resp)
+//  log.debug "HHDEB | getLocks"
     resp = getLocks(resp)
+//  log.debug "HHDEB | getSensors"
     resp = getSensors(resp)
+//  log.debug "HHDEB | getPresences"
     resp = getPresences(resp)
+//  log.debug "HHDEB | getThermostats"
     resp = getThermostats(resp)
+//  log.debug "HHDEB | getTemperatures"
     resp = getTemperatures(resp)
+//  log.debug "HHDEB | getIlluminances"
     resp = getIlluminances(resp)
+//  log.debug "HHDEB | getValves"
     resp = getValves(resp)
+//  log.debug "HHDEB | getWaters"
     resp = getWaters(resp)
+//  log.debug "HHDEB | getMusics"
     resp = getMusics(resp)
+//  log.debug "HHDEB | getSmokes"
     resp = getSmokes(resp)
     resp = getModes(resp)
     resp = getHsmStates(resp)
+//  log.debug "HHDEB | getOthers"
     resp = getOthers(resp)
+//  log.debug "HHDEB | getBlanks"
     resp = getBlanks(resp)
+//  log.debug "HHDEB | getImages"
     resp = getImages(resp)
+    resp = getPowers(resp)
 
     // optionally include pistons based on user option
     if (state.usepistons) {
+//      log.debug "HHDEB | getPistons"
         resp = getPistons(resp)
     }
-    
+//  log.debug "HHDEB | done"
+
     return resp
 }
 // this returns just a single active mode, not the list of available modes
@@ -625,6 +677,17 @@ def getOthers(resp) {
     return resp
 }
 
+def getPowers(resp) {
+    def n  = mypower ? mypower.size() : 0
+    if ( n > 0 && state.dologging ) { log.debug "Number of selected power sensors = ${n}" }
+    mypower?.each {
+        def thatid = it.id;
+        def multivalue = getThing(mypower, thatid, it)
+        resp << [name: it.displayName, id: thatid, value: multivalue, type: "power"]
+    }
+    return resp
+}
+
 def autoType(swid) {
     def swtype
     if ( mydimmers?.find {it.id == swid } ) { swtype= "switchlevel" }
@@ -645,6 +708,7 @@ def autoType(swid) {
     else if ( myilluminances?.find {it.id == swid } ) { swtype= "illuminance" }
     else if ( mysmokes?.find {it.id == swid } ) { swtype= "smoke" }
     else if ( mytemperatures?.find {it.id == swid } ) { swtype= "temperature" }
+    else if ( mypower?.find {it.id == swid } ) { swtype= "power" }
     else if ( myothers?.find {it.id == swid } ) { swtype= "other" }
     else if ( swid=="hsm" ) { swtype= "hsm" }
     else if ( swid=="hm1x1" || swid=="hm1x2" || swid=="hm2x1" || swid=="hm2x2" ) { swtype= "mode" }
@@ -666,7 +730,7 @@ def doAction() {
     def subid = params.subid
     def cmdresult = false
     if ( state.dologging ) {
-        log.debug "doaction params: cmd = $cmd type = $swtype id = $swid subid = $subid"
+        log.debug "doaction params: cmd = $cmd type = $swtype id = $swid subid = $subid swattr = ${swattr}"
     }
 
     // get the type if auto is set
@@ -676,15 +740,15 @@ def doAction() {
 
     switch (swtype) {
       case "switch" :
-      	 cmdresult = setSwitch(swid, cmd, swattr)
+         cmdresult = setSwitch(swid, cmd, swattr)
          break
          
       case "bulb" :
-      	 cmdresult = setBulb(swid, cmd, swattr)
+         cmdresult = setBulb(swid, cmd, swattr)
          break
          
       case "light" :
-      	 cmdresult = setLight(swid, cmd, swattr)
+         cmdresult = setLight(swid, cmd, swattr)
          break
          
       case "switchlevel" :
@@ -710,7 +774,7 @@ def doAction() {
       // note: this requires a special handler for motion to manually set it
       // to use this make sure you have MotionZwaveManual.groovy installed
       case "motion" :
-    	cmdresult = setSensor(swid, cmd, swattr)
+        cmdresult = setSensor(swid, cmd, swattr)
         break
 
       case "mode" :
@@ -722,11 +786,11 @@ def doAction() {
           break;
          
       case "valve" :
-      	 cmdresult = setValve(swid, cmd, swattr)
+         cmdresult = setValve(swid, cmd, swattr)
          break
 
       case "door" :
-      	 cmdresult = setDoor(swid, cmd, swattr)
+         cmdresult = setDoor(swid, cmd, swattr)
          break
 
       case "piston" :
@@ -747,11 +811,12 @@ def doAction() {
 }
 
 def doQuery() {
+//  log.debug "HHDEB -------- doQuery start ${params}"
     def swid = params.swid
     def swtype = params.swtype
     def cmdresult = false
 
-	// get the type if auto is set
+    // get the type if auto is set
     if ( (swtype=="auto" || swtype=="none" || swtype=="") && swid ) {
         swtype = autoType(swid)
     }
@@ -818,16 +883,18 @@ def doQuery() {
         cmdresult = swid ? getWeather(swid) : getWeathers( [] )
         break
     case "other" :
-    	cmdresult = getOther(swid)
+        cmdresult = getOther(swid)
         break
     case "mode" :
         cmdresult = getmyMode(swid)
         break
-    case "hsm" :
-        cmdresult = getHsmState(swid)
+    case "power":
+        cmdresult = getPower(swid)
+    break
         break
 
     }
+//  log.debug "HHDEB -------- doQuery end"
     return cmdresult
 }
 
@@ -1050,7 +1117,7 @@ def setGenericLight(mythings, swid, cmd, swattr) {
                 def s = item.currentValue("saturation").toInteger()
                 def v = item.currentValue("level").toInteger()
                 newcolor = hsv2rgb(hue, s, v)
-            	newonoff = "on"
+                newonoff = "on"
                 skiponoff = true
             break
               
@@ -1062,7 +1129,7 @@ def setGenericLight(mythings, swid, cmd, swattr) {
                 def s = item.currentValue("saturation").toInteger()
                 def v = item.currentValue("level").toInteger()
                 newcolor = hsv2rgb(hue, s, v)
-            	newonoff = "on"
+                newonoff = "on"
                 skiponoff = true
             break
               
@@ -1073,7 +1140,7 @@ def setGenericLight(mythings, swid, cmd, swattr) {
                 def h = item.currentValue("hue").toInteger()
                 def v = item.currentValue("level").toInteger()
                 newcolor = hsv2rgb(h, saturation, v)
-            	newonoff = "on"
+                newonoff = "on"
                 skiponoff = true
             break
               
@@ -1085,7 +1152,7 @@ def setGenericLight(mythings, swid, cmd, swattr) {
                 def h = item.currentValue("hue").toInteger()
                 def v = item.currentValue("level").toInteger()
                 newcolor = hsv2rgb(h, saturation, v)
-            	newonoff = "on"
+                newonoff = "on"
                 skiponoff = true
             break
               
@@ -1093,7 +1160,7 @@ def setGenericLight(mythings, swid, cmd, swattr) {
                 temperature = item.currentValue("colorTemperature").toInteger()
                 temperature = (temperature >= 6500) ? 6500 : temperature - (temperature % 100) + 100
                 item.setColorTemperature(temperature)
-            	newonoff = "on"
+                newonoff = "on"
                 skiponoff = true
             break
               
@@ -1104,7 +1171,7 @@ def setGenericLight(mythings, swid, cmd, swattr) {
                 temperature = (temperature <= 2700) ? 2700 : temperature - del
                 temperature = (temperature >= 6500) ? 6500 : temperature - (temperature % 100)
                 item.setColorTemperature(temperature)
-            	newonoff = "on"
+                newonoff = "on"
                 skiponoff = true
             break
               
@@ -1165,7 +1232,7 @@ def setGenericLight(mythings, swid, cmd, swattr) {
         }
         
         if ( ! skiponoff ) {
-        	newonoff=="on" ? item.on() : item.off()
+            newonoff=="on" ? item.on() : item.off()
         }
         resp = [switch: newonoff]
         if ( newsw ) { resp.put("level", newsw) }
@@ -1453,6 +1520,11 @@ def setThermostat(swid, curtemp, swattr, subid) {
 def setMusic(swid, cmd, swattr, subid) {
     def resp = false
     def item  = mymusics.find {it.id == swid }
+    if (item == null)
+    {
+        log.debug "No music item found, hack the momentary buttons for Sonos play track"
+        item  = mymomentaries.find {it.id == swid }
+    }
     def newsw
     if (item) {
         resp = getMusic(swid, item)
@@ -1520,6 +1592,10 @@ def setMusic(swid, cmd, swattr, subid) {
                       item.nextTrack()
                       resp['track'] = item.currentValue("trackDescription")
                       break
+                case "music-tunein":
+                log.debug "got tunein ${cmd}"
+                      item.playTuneinStation(cmd)
+                      break
             }
         }
     }
@@ -1562,3 +1638,4 @@ public  webCoRE_list(mode)
     return p
 }
 public  webCoRE_handler(evt){switch(evt.value){case 'pistonList':List p=state.webCoRE?.pistons?:[];Map d=evt.jsonData?:[:];if(d.id&&d.pistons&&(d.pistons instanceof List)){p.removeAll{it.iid==d.id};p+=d.pistons.collect{[iid:d.id]+it}.sort{it.name};state.webCoRE = [updated:now(),pistons:p];};break;case 'pistonExecuted':def cbk=state.webCoRE?.cbk;if(cbk&&evt.jsonData)"$cbk"(evt.jsonData);break;}}
+

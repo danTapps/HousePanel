@@ -4,6 +4,7 @@ var priorOpmode = "Operate";
 var returnURL = "housepanel.php";
 var dragZindex = 1;
 var pagename = "main";
+var mySwitchTimeout;
 
 // set this global variable to true to disable actions
 // I use this for testing the look and feel on a public hosting location
@@ -17,6 +18,26 @@ Number.prototype.pad = function(size) {
     var s = String(this);
     while (s.length < (size || 2)) {s = "0" + s;}
     return s;
+}
+
+function clearMainTimeout()
+{
+  if (mySwitchTimeout != null)
+  {
+    clearTimeout(mySwitchTimeout);
+  }
+  mySwitchTimeout = null;
+}
+
+function startMainTimeout()
+{
+  if (mySwitchTimeout== null)
+ 	  mySwitchTimeout = setTimeout(function(){ 
+    try {
+      $("#ui-id-1").click();
+      mySwitchTimeout = null;
+    } catch (e) {}
+  }, 30000);
 }
 
 function setCookie(cname, cvalue, exdays) {
@@ -1255,7 +1276,7 @@ function updateTile(aid, presult) {
                 value = fixTrack(value);
             }
             // handle weather icons
-            else if ( key==="weatherIcon" || key==="forecastIcon") {
+            else if ( key==="weatherIcon" || key==="forecastIcon" || key==="visualWithText") {
                 if ( value.substring(0,3) === "nt_") {
                     value = value.substring(3);
                 }
@@ -1326,6 +1347,9 @@ function setupTabclick() {
     $("a.ui-tabs-anchor").click(function() {
         // save this tab for default next time
         var defaultTab = $(this).attr("id");
+        //console.log("Tab: " + defaultTab);
+        clearMainTimeout();
+        startMainTimeout();
         if ( defaultTab ) {
             setCookie( 'defaultTab', defaultTab, 30 );
         }
@@ -1341,7 +1365,7 @@ function timerSetup(hubs) {
         var token = hub.hubAccess;
         var timerval = 60000;
         if ( hubType==="Hubitat" ) {
-            timerval = 5000;
+            timerval = 10000;
         }
         console.log("hub #" + hubnum + " timer = " + timerval + " hub = " + strObject(hub));
 
@@ -1358,14 +1382,23 @@ function timerSetup(hubs) {
                 setTimeout(function() {updarray.myMethod();}, this[1]);
                 return; 
             }
-
+            console.log("refresh everything from " + returnURL + " id: " + that[0] + " type: " + that[0] + " hubnum: " + that[2]);
             try {
-                $.post(returnURL, 
-                    {useajax: "doquery", id: that[0], type: that[0], value: "none", attr: "none", hubnum: that[2]},
+              $.ajax({
+                type: "POST",
+		            url: returnURL,
+		            data: {useajax: "doquery", id: that[0], type: that[0], value: "none", attr: "none", hubnum: that[2]},
+		            dataType: "json",
+		            timeout: timerval-1000,
+		            error: function(jqXHR, textStatus, errorThrown) {
+		              if(textStatus==="timeout") {
+		                //do something on timeout
+	            	  } 
+		            },
+		            success: 		    
                     function (presult, pstatus) {
                         if (pstatus==="success" && presult!==undefined ) {
-                            // console.log("Success polling hub #" + that[2] + ". Returned "+ Object.keys(presult).length+ " items: " + strObject(presult));
-
+                            //console.log("Success polling hub #" + that[2] + ". Returned "+ Object.keys(presult).length+ " items: " + strObject(presult));
                             // go through all tiles and update
                             try {
                             $('div.panel div.thing').each(function() {
@@ -1395,8 +1428,8 @@ function timerSetup(hubs) {
                             });
                             } catch (err) { console.error("Polling error", err.message); }
                         }
-                    }, "json"
-                );
+                    }
+                });
             } catch(err) {
                 console.error ("Polling error", err.message);
             }
@@ -1525,16 +1558,127 @@ function updAll(trigger, aid, bid, thetype, hubnum, pvalue) {
     
 }
 
+function tuneInList(str_type, thingindex, thingclass, hubnum, htmlcontent)
+{
+    // save the sheet upon entry for cancel handling
+    savedSheet = document.getElementById('customtiles').sheet;
+    var dialog_html = "<div id='tileDialog' class='tileDialog' str_type='" +
+                      str_type + "' thingindex='" + thingindex +"' >";
+
+    // header
+        dialog_html += "<div id='editheader'>Select TuneIn #" + thingindex +
+                   " of Type: " + str_type + " From hub #" + hubnum + "</div>";
+
+
+
+    var jqxhr = null;
+//    var htmlcontent = "<div style=\"overflow-x:auto;\"><table><tr><th>Station</th></tr>";
+    var htmlcontent = "<div class=radiopanel>"
+    jqxhr = $.post("housepanel.php",
+            {useajax: "tuneinlist", tile: thingindex, attr: ''},
+            function (presult, pstatus) {
+                if (pstatus==="success" ) {
+                    var stations = JSON.parse(presult);
+                    for (var i = 0; i < stations.length; i++)
+                    {
+//                      htmlcontent += "<tr><td>"+stations[i]['station']+"</td></tr>";
+                        htmlcontent += "<div class=radio url=\""+stations[i]['url']+"\">"+stations[i]['station']+"</div>";
+                    }
+                }
+            }
+        );
+    dialog_html += "<div id='editInfo' class='editInfo'></div>";
+    dialog_html += "<div id='subsection'></div>";
+
+    // * DIALOG_END *
+    dialog_html += "</div>";
+
+    // create a function to display the tile
+    var dodisplay = function() {
+        var pos = {top: 10, left: 20};
+        createModal( dialog_html, "body", true, pos,
+            // function invoked upon leaving the dialog
+            function(ui, content) {
+                var clk = $(ui).attr("name");
+                // alert("clk = "+clk);
+                if ( clk==="okay" ) {
+                } else if ( clk==="cancel" ) {
+                }
+                tileCount = 0;
+            },
+            // function invoked upon starting the dialog
+            function(hook, content) {
+                $("#modalid").draggable();
+            }
+        );
+    };
+
+    if ( jqxhr ) {
+        jqxhr.done(function() {
+            dodisplay();
+        //          htmlcontent+="</table></div>";
+                htmlcontent+="</div>";
+                console.log(htmlcontent);
+            $("#editInfo").after(htmlcontent);
+                $(".radio").click(function(){
+                  // Holds the product ID of the clicked element
+                  var url = $(this).attr('url');
+                  console.log('thingindex ' + thingindex + ' plays: ' + url);
+		  $.post(returnURL,
+                	{useajax: "doaction", id: thingindex, type: "music", value: url, attr: "music-tunein", subid: 0, hubnum: hubnum},
+	          	function (presult, pstatus) {
+                  		if (pstatus==="success" ) {
+                  		}
+            	 	}
+        	);
+
+
+
+
+
+                  closeModal();
+                });
+//            tileCount++;
+//            setupClicks(str_type, thingindex);
+        });
+    } else {
+        dodisplay();
+        $("#editInfo").after(htmlcontent);
+        tileCount++;
+        setupClicks(str_type, thingindex);
+    }
+
+}
+
 // setup trigger for clicking on the action portion of this thing
 // this used to be done by page but now it is done by sensor type
 function setupPage(trigger) {
+
+    $(".radiobtn").click(function(){
+        var aid = $(this).attr("aid");
+        var theclass = $(this).attr("class");
+        var subid = $(this).attr("subid");
+
+
+        // avoid doing click if the target was the title bar
+        // or if not in Operate mode; also skip sliders tied to subid === level
+        if ( aid===undefined || priorOpmode!=="Operate" || modalStatus ||
+             subid==="level" ||
+             ( $(this).attr("id") && $(this).attr("id").startsWith("s-") ) ) return;
+
+        var tile = '#t-'+aid;
+        var bid = $(tile).attr("bid");
+        var hubnum = $(tile).attr("hub");
+        console.log('tile: ' + tile + ' bid: ' + bid + ' hubnum: ' + hubnum);
+        tuneInList('whocares', bid, '', hubnum, '');
+    });
     $("div.overlay > div").off("click.tileactions");
     $("div.overlay > div").on("click.tileactions", function(event) {
         
         var aid = $(this).attr("aid");
         var theclass = $(this).attr("class");
         var subid = $(this).attr("subid");
-        
+       
         // avoid doing click if the target was the title bar
         // or if not in Operate mode; also skip sliders tied to subid === level
         if ( aid===undefined || priorOpmode!=="Operate" || modalStatus ||
@@ -1547,7 +1691,7 @@ function setupPage(trigger) {
         var thetype = $(tile).attr("type");
         var hubnum = $(tile).attr("hub");
         var targetid = '#a-'+aid+'-'+subid;
-        
+
         // set the action differently for Hubitat
         var ajaxcall = "doaction";
 //        if ( bid.startsWith("h_") ) {

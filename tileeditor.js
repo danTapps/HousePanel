@@ -761,7 +761,86 @@ function colorpicker(str_type, thingindex) {
     return dh;
 }
 
-// popup dialog box now uses createModal
+function tuneInList(str_type, thingindex, thingclass, hubnum, htmlcontent)
+{
+    // save the sheet upon entry for cancel handling
+    savedSheet = document.getElementById('customtiles').sheet;
+    var dialog_html = "<div id='tileDialog' class='tileDialog' str_type='" +
+                      str_type + "' thingindex='" + thingindex +"' >";
+
+    // header
+        dialog_html += "<div id='editheader'>Select TuneIn #" + thingindex +
+                   " of Type: " + str_type + " From hub #" + hubnum + "</div>";
+
+
+
+    var jqxhr = null;
+//    var htmlcontent = "<div style=\"overflow-x:auto;\"><table><tr><th>Station</th></tr>";
+    var htmlcontent = "<div class=radiopanel>"
+    jqxhr = $.post("housepanel.php",
+            {useajax: "tuneinlist", tile: thingindex, attr: ''},
+            function (presult, pstatus) {
+                if (pstatus==="success" ) {
+		    var stations = JSON.parse(presult);
+		    for (var i = 0; i < stations.length; i++)
+		    {
+//		    	htmlcontent += "<tr><td>"+stations[i]['station']+"</td></tr>";
+			htmlcontent += "<div class=radio url=\""+stations[i]['url']+"\">"+stations[i]['station']+"</div>";
+		    }
+                }
+            }
+        );
+    dialog_html += "<div id='editInfo' class='editInfo'></div>";
+    dialog_html += "<div id='subsection'></div>";
+
+    // * DIALOG_END *
+    dialog_html += "</div>";
+    
+    // create a function to display the tile
+    var dodisplay = function() {
+        var pos = {top: 10, left: 20};
+        createModal( dialog_html, "body", true, pos,
+            // function invoked upon leaving the dialog
+            function(ui, content) {
+                var clk = $(ui).attr("name");
+                // alert("clk = "+clk);
+                if ( clk==="okay" ) {
+                } else if ( clk==="cancel" ) {
+                }
+                tileCount = 0;
+            },
+            // function invoked upon starting the dialog
+            function(hook, content) {
+                $("#modalid").draggable();
+            }
+        );
+    };
+
+    if ( jqxhr ) {
+        jqxhr.done(function() {
+            dodisplay();
+   		htmlcontent+="</div>";
+		console.log(htmlcontent);
+            $("#editInfo").after(htmlcontent);
+		$(".radio").click(function(){
+		  // Holds the product ID of the clicked element
+		  var url = $(this).attr('url');
+		  console.log('thingindex ' + thingindex + ' plays: ' + url);
+		  
+		  
+		  closeModal();
+		});
+//            tileCount++;
+//            setupClicks(str_type, thingindex);
+        });
+    } else {
+        dodisplay();
+        $("#editInfo").after(htmlcontent);
+        tileCount++;
+        setupClicks(str_type, thingindex);
+    }
+	
+}
 function editTile(str_type, thingindex, thingclass, hubnum, htmlcontent) {  
 
     // save the sheet upon entry for cancel handling
