@@ -7,6 +7,20 @@
  * HousePanel now obtains all auth information from the setup step upon first run
  *
  * Revision History
+ * 1.927      Added flourescent graphic to default skin, fix edit of active tile
+ * 1.926      Doc update to describe video tiles and minor tweaks, added help button
+ * 1.925      Various patches and hub tweaks
+ *            - Hub name retrieval from hub
+ *            - Show user auth activation data
+ *            - Hack to address Hubitat bug for Zwave generic dimmers
+ *            - Added border styling to TileEditor
+ * 1.924      Update custom tile status to match linked tiles
+ *            Added option to select number of custom tiles to use (beta)
+ * 1.923      TileEditor updates
+ *            - new option to align icons left, center or right
+ *            - added images of Sonos speakers to media library
+ *            - fixed bug where header invert option was always clicked
+ *            - renamed Text Width/Height to Item Width/Height
  * 1.922      Updated default skin to make custom reflect originals in more places
  * 1.921      Hybrid custom tile support using hmoptions user provided input
  * 1.920      CSS cleanup and multiple new features
@@ -126,7 +140,7 @@
 */
 ini_set('max_execution_time', 300);
 ini_set('max_input_vars', 20);
-define('HPVERSION', 'Version 1.922');
+define('HPVERSION', 'Version 1.927');
 define('APPNAME', 'HousePanel ' . HPVERSION);
 define('CRYPTSALT','HousePanel%by@Ken#Washington');
 
@@ -354,6 +368,15 @@ function getDevices($allthings, $hubnum, $hubType, $hubAccess, $hubEndpt, $clien
     return $allthings;
 }
 
+// new function to get name from hub
+function getName($hubAccess, $hubEndpt, $clientId, $clientSecret) {
+    $host = $hubEndpt . "/gethubinfo";
+    $headertype = array("Authorization: Bearer " . $hubAccess);
+    $nvpreq = "client_secret=" . urlencode($clientSecret) . "&scope=app&client_id=" . urlencode($clientId);
+    $response = curl_call($host, $headertype, $nvpreq, "POST");
+    return $response["sitename"];
+}
+
 function fixHost($stweb) {
     if ( substr(strtolower($stweb),0,4) !== "http" ) {
         if ( preg_match("/{1,3}\d\.{1,3}\d\.{1,3}\d\.{1,3}\d/", $stweb) ) {
@@ -401,7 +424,8 @@ function getAccessToken($returl, $code, $stweb, $clientId, $clientSecret, $hubTy
     
 }
 
-// returns an array of the first endpoint and the sitename
+// changed this routine to only get endpoint
+// since we now get the location name separately
 // this only works if the clientid within theendpoint matches our auth version
 // TODO: Implement logic to read Wink and Vera hub end points
 function getEndpoint($access_token, $stweb, $clientId, $hubType) {
@@ -417,25 +441,23 @@ function getEndpoint($access_token, $stweb, $clientId, $hubType) {
     $response = curl_call($host, $headertype);
 
     $endpt = false;
-    $sitename = "";
+//    $sitename = "";
     if ($response) {
         if ( is_array($response) ) {
 	    $endclientid = $response[0]["oauthClient"]["clientId"];
 	    if ($endclientid === $clientId) {
                 $endpt = $response[0]["uri"];
-                $sitename = $response[0]["location"]["name"];
+//                $sitename = $response[0]["location"]["name"];
 	    }
         } else {
 	    $endclientid = $response["oauthClient"]["clientId"];
 	    if ($endclientid === $clientId) {
                 $endpt = $response["uri"];
-                $sitename = $response["location"]["name"];
+//                $sitename = $response["location"]["name"];
 	    }
-            
         }
     }
-    return array($endpt, $sitename);
-
+    return $endpt;
 }
 
 function tsk($timezone, $skin, $kiosk, $pword) {
@@ -486,8 +508,8 @@ function getAuthPage($returl, $hpcode, $hubset=null, $newthings=null) {
 
     $tc.= "<p>The Authorize button below will " .
             "begin the typical OAUTH process for your hub. " .
-            "Please note that if you provide a manual Access Token and Endpoint you will " .
-            "be returned immediately to the main page and not sent through the OAUTH flow process, and your " .
+            "If you provide a manual Access Token and Endpoint your hub will " .
+            "be authorized immediately and not sent through the OAUTH flow process, so your " .
             "devices will have to be selected or modified from the hub app instead of here.</p>";
 
     $tc.= "<p>After a successful OAUTH flow authorization, you will be redirected back here to repeat " .
@@ -601,7 +623,7 @@ function getAuthPage($returl, $hpcode, $hubset=null, $newthings=null) {
                 if ( array_key_exists("user_sitename", $configoptions) ) {
                     $hubName = $configoptions["user_sitename"];
                 } else {
-                    $hubName = "SmartThings Homs";
+                    $hubName = "SmartThings Home";
                 }
                 $sthub = array("hubType"=>"SmartThings", 
                     "hubHost"=>$configoptions["st_web"], 
@@ -852,9 +874,9 @@ function getAuthPage($returl, $hpcode, $hubset=null, $newthings=null) {
         // ------------------ general settings ----------------------------------
         $tc.= tsk($timezone, $skin, $kiosk, $pword);
 
-        if ( $hubset!==null && $newthings!==null && is_array($newthings) && intval($hubset)===intval($i) ) {
+        if ( $hubset!==null && intval($hubset)===intval($i) && $newthings!==null && is_array($newthings) && count($newthings) ) {
             $numnewthings = count($newthings);
-            $tc.= "<div><label class=\"startupinp highlight\">Hub was authorized and $numnewthings devices were retrieved.</label></div>";
+            $tc.= "<div><label class=\"startupinp highlight\">Hub #$defhub was authorized and $numnewthings devices were retrieved.</label></div>";
         }
     
         $tc.= "<div class='hubopt'>";
@@ -865,18 +887,21 @@ function getAuthPage($returl, $hpcode, $hubset=null, $newthings=null) {
         $st_select = $he_select = $w_select = $v_select = $o_select = "";
         if ( $hubType==="SmartThings" ) { $st_select = "selected"; }
         if ( $hubType==="Hubitat" ) { $he_select = "selected"; }
-        if ( $hubType==="Wink" ) { $w_select = "selected"; }
-        if ( $hubType==="Vera" ) { $v_select = "selected"; }
-        if ( $hubType==="OpenHab" ) { $o_select = "selected"; }
+//        if ( $hubType==="Wink" ) { $w_select = "selected"; }
+//        if ( $hubType==="Vera" ) { $v_select = "selected"; }
+//        if ( $hubType==="OpenHab" ) { $o_select = "selected"; }
         $tc.= "<option value=\"SmartThings\" $st_select>SmartThings</option>";
         $tc.= "<option value=\"Hubitat\" $he_select>Hubitat</option>";
-        $tc.= "<option value=\"Wink\" $w_select>Wink</option>";
+        // $tc.= "<option value=\"Wink\" $w_select>Wink</option>";
         // $tc.= "<option value=\"Vera\" $v_select>Vera</option>";
-        $tc.= "<option value=\"OpenHab\" $o_select>OpenHab</option>";
+        // $tc.= "<option value=\"OpenHab\" $o_select>OpenHab</option>";
         $tc.= "</select></div>";
-
+        
+        if ( !$hub["hubHost"] ) {
+            $hub["hubHost"] = "https://graph.api.smartthings.com";
+        }
         $tc.= "<div><label class=\"startupinp required\">API Url: </label>";
-        $tc.= "<input class=\"startupinp\" name=\"hubHost\" width=\"80\" type=\"text\" value=\"" . $hub["hubHost"] . "\"/></div>"; 
+        $tc.= "<input class=\"startupinp\" title=\"Enter the hub OAUTH address here\" name=\"hubHost\" width=\"80\" type=\"text\" value=\"" . $hub["hubHost"] . "\"/></div>"; 
 
         $tc.= "<div><label class=\"startupinp required\">Client ID: </label>";
         $tc.= "<input class=\"startupinp\" name=\"clientId\" width=\"80\" type=\"text\" value=\"" . $hub["clientId"] . "\"/></div>"; 
@@ -930,6 +955,8 @@ function getAllThings($reset = false) {
         $allthings = array();
         $hubnum = -1;
         $hubType = "None";
+
+        $customcnt = getCustomCount($options["index"]);
         
         // add digital clock tile if not there
         $clockname = "Digital Clock";
@@ -937,8 +964,7 @@ function getAllThings($reset = false) {
         $dateofmonth = date("M d, Y");
         $timeofday = date("g:i a");
         $timezone = date("T");
-        $clockskin = "";
-        $dclock = array("name" => $clockname, "weekday" => $weekday, "date" => $dateofmonth, "time" => $timeofday, "tzone" => $timezone, "skin" => $clockskin);
+        $dclock = array("name" => $clockname, "weekday" => $weekday, "date" => $dateofmonth, "time" => $timeofday, "tzone" => $timezone, "skin" => "");
         $allthings["clock|clockdigital"] = array("id" => "clockdigital", "name" => $clockname, 
             "hubnum" => $hubnum, "hubtype" => $hubType, "type" => "clock", "value" => $dclock);
 
@@ -946,7 +972,7 @@ function getAllThings($reset = false) {
         $clockname = "Analog Clock";
         // $clockskin = "CoolClock:classic";
         $clockskin = "CoolClock:swissRail:72";
-        $aclock = array("name" => $clockname, "skin" => $clockskin);
+        $aclock = array("name" => $clockname, "weekday" => $weekday, "date" => $dateofmonth, "time" => $timeofday, "tzone" => $timezone, "skin" => $clockskin);
         $allthings["clock|clockanalog"] = array("id" => "clockanalog", "name" => $clockname, 
              "hubnum" => $hubnum, "hubtype" => $hubType, "type" => "clock", "value" => $aclock);
 
@@ -986,9 +1012,10 @@ function getAllThings($reset = false) {
 
         // add 8 custom ad-hoc tiles
         // custom tiles can only reference things in the first hub
-        for ($i=1; $i<9; $i++ ) {
+        for ($i=1; $i<= $customcnt; $i++ ) {
             $customid = "custom_" . strval($i);
             $customname = "Custom " . strval($i);
+            
             if (array_key_exists($customid, $options) ) {
                 $lines = $options[$customid];
                 if ( !is_array($lines[0]) ) {
@@ -1041,7 +1068,9 @@ function getCustomTile($tilename, $lines, $options, $allthings) {
     foreach ($lines as $msgs) {
         $calltype = strtoupper($msgs[0]);
         $posturl = $msgs[1];
-        $subid = $msgs[2];
+        $subidraw = $msgs[2];
+        $ignores = array(" ","'","*","<",">","!","{","}","-",".",",",":","+","&","%");
+        $subid = str_replace($ignores, "", $subidraw);
         
         // process web calls made in custom tiles
         if ( $calltype==="NAME" )
@@ -1069,6 +1098,7 @@ function getCustomTile($tilename, $lines, $options, $allthings) {
 //                $custom_val[$subid] = $webresponse;
 //            }
             $custom_val[$subid] = $calltype . ": " . $posturl;
+            $custom_val["results"] = "";
 
         // code for enabling mix and match subid's into custom tiles
         } else if ( $calltype==="LINK" ) {
@@ -1270,6 +1300,7 @@ function makeThing($i, $kindex, $thesensor, $panelname, $postop=0, $posleft=0, $
         $tc.= returnVideo($vidname);
         $tc.= "</div>";
         $tc.= "</div>";
+        
     } else {
         
 
@@ -1283,13 +1314,9 @@ function makeThing($i, $kindex, $thesensor, $panelname, $postop=0, $posleft=0, $
         }
         
         $tc.= "<div aid=\"$i\" title=\"$thingtype status\" class=\"thingname $thingtype t_$kindex\" id=\"s-$i\">";
-        $tc.= "<span class=\"original n_$kindex\">" . $thingpr. "</span>";;
+        $tc.= "<span class=\"original n_$kindex\">" . $thingpr. "</span>";
         // $tc.= "<span class=\"customname m_$kindex\">$customname</span>";
         $tc.= "</div>";
-
-        if ($thingtype === "music") {
-//         $tc.="<div aid=\"$i\" hub=\"$hubnum\"class=\"radiobtn\">RADIO</div>";
-        }
 	
         // create a thing in a HTML page using special tags so javascript can manipulate it
         // multiple classes provided. One is the type of thing. "on" and "off" provided for state
@@ -1297,7 +1324,6 @@ function makeThing($i, $kindex, $thesensor, $panelname, $postop=0, $posleft=0, $
         // the first class tag is the type and a second class tag is for the state - either on/off or open/closed
         // ID is used to send over the groovy thing id number passed in as $bid
         // for multiple row ID's the prefix is a$j-$bid where $j is the jth row
-	
         if (is_array($thingvalue)) {
             $j = 0;
             
@@ -1593,12 +1619,12 @@ function doAction($endpt, $path, $access_token, $swid, $swtype,
         $dateofmonth = date("M d, Y");
         $timeofday = date("g:i a");
         $timezone = date("T");
-        $dclock = array("name" => $dclockname, "weekday" => $weekday, "date" => $dateofmonth, "time" => $timeofday, "tzone" => $timezone, "skin" => "");
+        $dclock = array("name" => $dclockname, "skin" => "", "weekday" => $weekday, "date" => $dateofmonth, "time" => $timeofday, "tzone" => $timezone);
 
         $aclockname = "Analog Clock";
         // $clockskin = "CoolClock:classic";
         $clockskin = "CoolClock:swissRail:72";
-        $aclock = array("name" => $aclockname, "skin" => $clockskin);
+        $aclock = array("name" => $aclockname, "skin" => $clockskin, "weekday" => $weekday, "date" => $dateofmonth, "time" => $timeofday, "tzone" => $timezone);
     }
     
     if ($swtype==="clock" && $swid==="clockdigital") {
@@ -1623,40 +1649,54 @@ function doAction($endpt, $path, $access_token, $swid, $swtype,
     // only items from the first authenticated hub can be used
     // multiple things can be grabbed but each subid must be unique
     // so you can't grab two switches but you can grab a switch and a temperature
-    } else if ($swtype==="custom" && $path==="doaction" ) {
+    } else if ($swtype==="custom") {
 
         $response = array();
         
         // handle custom tiles if invoked as an api call we use parameters passed
         if (array_key_exists($swid, $options) ) {
             $lines = $options[$swid];
+            if ( !is_array($lines[0]) ) {
+                $lines = array($lines);
+            }
+                
             foreach ($lines as $msgs) {
                 $calltype = strtoupper($msgs[0]);
                 $posturl = $msgs[1];
-                $params = $msgs[2];
+                $paramsraw = $msgs[2];
+                $ignores = array(" ","'","*","<",">","!","{","}","-",".",",",":","+","&","%");
+                $params = str_replace($ignores, "", $paramsraw);
 
                 // take action on the one clicked on
                 if ( $params===$subid ) {
                     
                     // handle web posts
-                    if ( $posturl && ($calltype==="GET" || $calltype==="POST" || $calltype==="PUT") &&
-                                      substr(strtolower($posturl),0,4)==="http" ) 
+                    // no longer change the params displayed to results
+                    // but we do create a new item called "results"
+                    if ( $posturl && 
+                            ($calltype==="GET" || $calltype==="POST" || $calltype==="PUT") &&
+                            substr(strtolower($posturl),0,4)==="http" ) 
                     {
-                        $webresponse = curl_call($posturl, FALSE, "", $calltype);
-                        if (is_array($webresponse)) {
-                            $response[$params] = "";
-                            foreach($webresponse as $key => $val) {
-                                $response[$params] .= "<p>" . $key . ": ";
-                                if ( is_array($val) ) {
-                                    $response[$params].= "<pre>" . print_r($val,true) . "</pre>";
-                                } else {
-                                    $response[$params].= $val;
+                        if ( $path==="doaction") {
+                            $webresponse = curl_call($posturl, FALSE, "", $calltype);
+                            if (is_array($webresponse)) {
+                                $response["results"] = "";
+                                foreach($webresponse as $key => $val) {
+                                    $response["results"] .= "<p>" . $key . ": ";
+                                    if ( is_array($val) ) {
+                                        $response["results"].= "<pre>" . print_r($val,true) . "</pre>";
+                                    } else {
+                                        $response["results"].= $val;
+                                    }
+                                    $response["results"].= "</p>";
                                 }
-                                $response[$params].= "</p>";
+                            } else {
+                                $response["results"] = $webresponse;
                             }
                         } else {
-                            $response[$params] = $webresponse;
+                            $response["results"] = "";
                         }
+                        $response[$params] = $posturl;
 
                     // handle items linked to other things
                     } else if ( $calltype==="LINK" ) {
@@ -1676,6 +1716,9 @@ function doAction($endpt, $path, $access_token, $swid, $swtype,
                         if ( $subid ) { $nvpreq.= "&subid=" . urlencode($subid); }
                         $response = curl_call($host, $headertype, $nvpreq, "POST");
                         
+                        // unset the name if returned because we want custom name to stay intact
+                        unset( $response["name"] );
+                        
                         // update the main array
                         if ( $response && count($response)>0 && isset($_SESSION["allthings"]) ) {
                             $allthings = $_SESSION["allthings"];
@@ -1685,9 +1728,6 @@ function doAction($endpt, $path, $access_token, $swid, $swtype,
                                 $allthings[$lidx]["value"] = $newval;
                             }
                         }
-                        
-                        // unset the name if returned
-                        unset( $response["name"] );
                         
                     // default is we assume a text value put in the params slot
                     } else {
@@ -1722,7 +1762,7 @@ function doAction($endpt, $path, $access_token, $swid, $swtype,
         // do nothing if we don't have things loaded in a session
         // but we can still return the API feature
         // we just don't update the session for a web browser
-        if ( isset($_SESSION["allthings"]) ) {
+        if ( $response && count($response)>0 && isset($_SESSION["allthings"]) ) {
             $allthings = $_SESSION["allthings"];
             
         // update session with new status and pick out all if needed
@@ -1750,9 +1790,71 @@ function doAction($endpt, $path, $access_token, $swid, $swtype,
                     $respvals[$atileid] = $aclockthing;
                     $allthings["clock|clockanalog"] = $aclockthing;
                 }
+                
+                // add custom linked tiles query
+                $customcnt = getCustomCount($options["index"]);
+                
+                // make our custom tiles fresh
+                for ($i=1; $i<= $customcnt; $i++ ) {
+                    $customid = "custom_" . strval($i);
+                    $customname = "Custom " . strval($i);
 
-                // for all types return a different type of array
-                // handle in the javascript in allTimerSetup
+                    if (array_key_exists($customid, $options) ) {
+                        $lines = $options[$customid];
+                        if ( !is_array($lines[0]) ) {
+                            $lines = array($lines);
+                        }
+                    } else {
+                        $lines = array(array("TEXT", "Not Configured", "text"));
+                    }
+                    $custom_val = getCustomTile($customname, $lines, $options, $allthings);
+
+                    $allthings["custom|$customid"] = array("id" => $customid, "name" => $customname, 
+                        "hubnum" => 0, "hubtype" => $hubs[0]["hubType"], "type" => "custom",
+                        "value" => $custom_val);
+                }
+                
+                for ($i=1; $i <= $customcnt; $i++) {
+                    $cid = "custom_$i";
+                    $customidx = "custom|$cid";
+                    $customid = $options["index"][$customidx];
+                    
+                    if (array_key_exists($cid, $options) && array_key_exists($customidx, $allthings) ) {
+                        $lines = $options[$cid];
+                        if ( !is_array($lines[0]) ) {
+                            $lines = array($lines);
+                        }
+                        
+                        $customthing = $allthings[$customidx]["value"];
+                        foreach ($lines as $msgs) {
+                            $calltype = strtoupper($msgs[0]);
+                            $posturl = $msgs[1];
+                            $paramsraw = $msgs[2];
+                            $ignores = array(" ","'","*","<",">","!","{","}","-",".",",",":","+","&","%");
+                            $subid = str_replace($ignores, "", $paramsraw);
+
+                            // we only care about LINK types at this point
+                            if ( $calltype==="LINK" ) {
+
+                                // get the linked values from the main array
+                                $idx = array_search($posturl, $options["index"]);
+                                $theparts = explode("|",$idx);
+                                $linked_swtype = $theparts[0];
+                                $linked_swid = $theparts[1];
+                                $linked_idx = $linked_swtype . "|" . $linked_swid;
+                                $linked_thing = $allthings[$linked_idx];
+                                $linked_response = $linked_thing["value"];
+                                
+                                // save the response for visual reporting
+                                $customthing[$subid] = $linked_response[$subid];
+                            }
+                        }
+
+                        // include in our query report
+                        $respvals[$customid] = $customthing;
+                    }
+                }
+
                 $response = $respvals;
             } else {
                 $idx = $swtype . "|" . $swid;
@@ -2154,6 +2256,16 @@ function mysortfunc($cmpa, $cmpb) {
     return $t;
 }
 
+function getCustomCount($indexoptions) {
+    $cnt= 0;
+    foreach ( array_keys($indexoptions) as $idx ) {
+        if ( substr($idx,0,7) === "custom|" ) {
+            $cnt++;
+        }
+    }
+    return $cnt;
+}
+
 function getOptionsPage($options, $retpage, $allthings, $sitename) {
     
     // show an option tabls within a form
@@ -2170,6 +2282,8 @@ function getOptionsPage($options, $retpage, $allthings, $sitename) {
     $hubs = $configoptions["hubs"];
     
     $tc = "";
+    $tc.= "<h3>HousePanel " . HPVERSION . " Options</h3>";
+    $tc.= "<div class=\"formbutton formauto\"><a href=\"$retpage\">Cancel and Return to HousePanel</a></div>";
     
     $tc.= "<div id=\"optionstable\" class=\"optionstable\">";
     $tc.= "<form id=\"optionspage\" class=\"options\" name=\"options" . "\" action=\"$retpage\"  method=\"POST\">";
@@ -2183,8 +2297,16 @@ function getOptionsPage($options, $retpage, $allthings, $sitename) {
     $tc.= "<label for=\"kioskid\" class=\"kioskoption\">Kiosk Mode: </label>";
     
     $kstr = $kioskoptions=="true" ? "checked" : "";
-    $tc.= "<input id=\"kioskid\" width=\"24\" type=\"checkbox\" name=\"kiosk\"  value=\"$kioskoptions\" $kstr/></div>";
-    $tc.= "<div class=\"filteroption\">Option Filters: ";
+    $tc.= "<input id=\"kioskid\" width=\"24\" type=\"checkbox\" name=\"kiosk\"  value=\"$kioskoptions\" $kstr/>";
+    // $tc.= "</div>";
+
+    $customcnt = getCustomCount($indexoptions);
+    // $tc.= "<div class=\"filteroption\">";
+    $tc.= "<br /><label for=\"customcntid\" class=\"kioskoption\">Number of Custom Tiles: </label>";
+    $tc.= "<input id=\"customcntid\" name=\"customcnt\" width=\"10\" type=\"number\"  min='0' max='50' step='1' value=\"$customcnt\" />";
+    $tc.= "</div>";
+    
+    $tc.= "<br /><div class=\"filteroption\">Option Filters: ";
     $tc.= "<div id=\"allid\" class=\"smallbutton\">All</div>";
     $tc.= "<div id=\"noneid\" class=\"smallbutton\">None</div>";
     $tc.= "</div>";
@@ -2215,8 +2337,8 @@ function getOptionsPage($options, $retpage, $allthings, $sitename) {
         // search for a room name index for this column
         // $roomname = array_search($k, $roomoptions);
         if ( $roomname ) {
-            $tc.= "<th class=\"roomname\">$roomname ";
-            $tc.= hidden("o_" . $roomname, $k);
+            $tc.= "<th class=\"roomname\">$roomname";
+            // $tc.= hidden("o_" . $roomname, $k);
             $tc.= "</th>";
         }
     }
@@ -2247,31 +2369,27 @@ function getOptionsPage($options, $retpage, $allthings, $sitename) {
             $hubType = $hubs[$hubnum]["hubType"];
             $hubStr = $hubnum . ": " . $hubType;
         }
-        if (in_array($thetype, $useroptions)) {
-            $evenodd = !$evenodd;
-            $evenodd ? $odd = " odd" : $odd = "";
-            $tc.= "<tr type=\"$thetype\" class=\"$hubType showrow" . $odd . "\">";
-        } else {
-            $tc.= "<tr type=\"$thetype\" class=\"hiderow\">";
-        }
 
-        // add the hidden field with index of all things
+        // get the tile index number
         $arr = $indexoptions[$thingid];
         if ( is_array($arr) ) {
             $thingindex = $arr[0];
         } else {
             $thingindex = $arr;
         }
-        if ( $thetype=="video") {
-            $tc.= "<td class=\"thingname\">";
+        
+        // write the table row
+        if (in_array($thetype, $useroptions)) {
+            $evenodd = !$evenodd;
+            $evenodd ? $odd = " odd" : $odd = "";
+            $tc.= "<tr type=\"$thetype\" tile=\"$thingindex\" class=\"showrow" . $odd . "\">";
         } else {
-            $pnames = processName($thingname, $thetype);
-            $subtype = $pnames[1];
-            $class = "thing " . $thetype . "-thing $subtype p_" . $thingindex;
-            $tc.= "<td class=\"thingname\">";
+            $tc.= "<tr type=\"$thetype\" tile=\"$thingindex\" class=\"hiderow\">";
         }
-        $tc.= $thingname . "<span class=\"typeopt\">(" . $thetype . ")</span>";
-        $tc.= hidden("i_" .  $thingid, $thingindex);
+        
+        $tc.= "<td class=\"thingname\">";
+        $tc.= $thingname . "<span class=\"typeopt\"> (" . $thetype . ")</span>";
+        // $tc.= hidden("i_" .  $thingid, $thingindex);
         $tc.= "</td>";
         
         $tc.="<td>$hubStr</td>";
@@ -2294,12 +2412,8 @@ function getOptionsPage($options, $retpage, $allthings, $sitename) {
                 foreach( $things as $arr ) {
                     if ( is_array($arr) ) {
                         $idx = $arr[0];
-                        $postop = $arr[1];
-                        $posleft = $arr[2];
                     } else {
                         $idx = $arr;
-                        $postop = 0;
-                        $posleft = 0;
                     }
                     if ( $idx == $thingindex ) {
                         $ischecked = true;
@@ -2312,7 +2426,6 @@ function getOptionsPage($options, $retpage, $allthings, $sitename) {
                 } else {
                     $tc.= "<input type=\"checkbox\" name=\"" . $roomname . "[]\" value=\"" . $thingindex . "\" >";
                 }
-//                $tc.= "<span class=\"dragdrop\">(" . $postop . "," . $posleft . ")</span>";
                 $tc.= "</td>";
             }
         }
@@ -2464,6 +2577,16 @@ function addPage() {
     return $newname;
 }
 
+// returns the maximum index from the options
+function getMaxIndex($options) {
+    $maxindex = 0;
+    foreach ( $options["index"] as $key => $var ) {
+        $intvar = intval($var);
+        $maxindex = ( $intvar > $maxindex ) ? $intvar : $maxindex;
+    }
+    return $maxindex;
+}
+
 // this processes a _POST return from the options page
 function processOptions($optarray) {
     if (DEBUG || DEBUG4) {
@@ -2479,18 +2602,17 @@ function processOptions($optarray) {
     
     // make an empty options array for saving
     $options = $oldoptions;
-    $options["rooms"] = array();
-    $options["index"] = array();
+    // $options["rooms"] = array();
+    // $options["index"] = array();
     $options["things"] = array();
     $options["useroptions"] = $thingtypes;
-    $options["kiosk"] = "false";
-    $options["config"] = $oldoptions["config"];
-    $roomoptions = $options["rooms"];
+    $roomnames = array_keys($options["rooms"]);
+    $indexoptions = $oldoptions["index"];
     
     // use clock instead of blank for default only tile
     $onlytile = $oldoptions["index"]["clock|clockdigital"];
     
-    // fix long-standing bug by putting a blank in each room
+    // fix long-standing bug by putting a clock in any empty room
     // to force the form to return each room defined in options file
     foreach(array_keys($oldoptions["rooms"]) as $room) {
         $options["things"][$room] = array();
@@ -2515,16 +2637,39 @@ function processOptions($optarray) {
             } else {
                 $options["config"]["kiosk"] = "false";
             }
-//            $options["kiosk"] = strtolower($val);
+        }
+        else if ( $key=="customcnt" ) {
+            $customcnt = intval($val);
+            $oldcnt = getCustomCount($oldoptions["index"]);
+            
+            if ( $customcnt > $oldcnt ) {
+                $maxindex = getMaxIndex($oldoptions);
+                for ( $i = $oldcnt+1;  $i <= $customcnt; $i++ ) {
+                    $maxindex++;
+                    $options["index"]["custom|custom_" . $i] = $maxindex;
+                }
+                
+            // if we request fewer customs than before just delete the extras
+            } else if ( $customcnt < $oldcnt ) {
+                foreach ( array_keys($indexoptions) as $idx ) {
+                    if ( substr($idx,0,14) === "custom|custom_" ) {
+                        $idcnt = intval(substr($idx,14));
+                        if ( $idcnt > $customcnt ) {
+                            unset( $options["index"][$idx] );
+                        }
+                    }
+                }
+            }
+            
         }
         else if ( $key=="useroptions" && is_array($val) ) {
             $newuseroptions = $val;
             $options["useroptions"] = $newuseroptions;
         }
-        // if the value is an array it must be a room name with
-        // the values being either an array of indexes to things
-        // or an integer indicating the order to display this room tab
-        else if ( is_array($val) ) {
+        // made this more robust by checking room name being valid
+        // and if the value is an array it must be a room name with
+        // else if ( is_array($val) ) {
+        else if ( in_array($key, $roomnames) && is_array($val) ) {
             $roomname = $key;
             $options["things"][$roomname] = array();
             
@@ -2573,35 +2718,34 @@ function processOptions($optarray) {
                 }
             }
             
-            // put a blank in a room if it is empty
+            // put a clock in a room if it is empty
             if ( count($options["things"][$roomname]) == 0  ) {
                 $options["things"][$roomname][] = array($onlytile,0,0,1,"");
             }
+            
+// these blocks aren't used any more since we don't edit rooms and things in Options
         // keys starting with o_ are room names with order as value
-        } else if ( substr($key,0,2)=="o_") {
-            $roomname = substr($key,2);
-            $options["rooms"][$roomname] = intval($val,10);
-        // keys starting with i_ are thing type|id pairs with order as value
-        } else if ( substr($key,0,2)=="i_") {
-            $thingid = substr($key,2);
-            $options["index"][$thingid] = intval($val,10);
+//        } else if ( substr($key,0,2)=="o_") {
+//            $roomname = substr($key,2);
+//            $options["rooms"][$roomname] = intval($val,10);
+//        // keys starting with i_ are thing type|id pairs with order as value
+//        } else if ( substr($key,0,2)=="i_") {
+//            $thingid = substr($key,2);
+//            $options["index"][$thingid] = intval($val,10);
         }
     }
         
     // write options to file
     writeOptions($options);
     
-    // reload to show new options
-    // header("Location: $retpage");
+    // refresh the main array
+    getAllThings(true);
 }
 
 function getInfoPage($returnURL, $sitename, $skin, $allthings) {
     $options = readOptions();
     $configoptions = $options["config"];
     $hubs = $configoptions["hubs"];
-//    $stweb = $configoptions["st_web"];
-//    $clientId = $configoptions["client_id"];
-//    $clientSecret = $configoptions["client_secret"];
     
     $tc = "";
     $tc.= "<h3>HousePanel " . HPVERSION . " Information Display</h3>";
@@ -2672,12 +2816,19 @@ function getInfoPage($returnURL, $sitename, $skin, $allthings) {
             $value = $thing["value"];
         }
         
+        $hubnum = $thing["hubnum"];
+        if ( $hubnum===false || $hubnum===null || $hubnum<0 || !$thing["hubtype"] ) {
+            $hubstr = "None";
+        } else {
+            $hubstr = $hubnum . ": " . $thing["hubtype"];
+        }
+        
         // $idx = $thing["type"] . "|" . $thing["id"];
         $tc.= "<tr><td class=\"thingname\">" . $thing["name"] . 
               "</td><td class=\"thingarr\">" . $value . 
               "</td><td class=\"infotype\">" . $thing["type"] .
               "</td><td class=\"infoid\">" . $thing["id"] . 
-              "</td><td class=\"infoid\">" . $thing["hubnum"] . ": " . $thing["hubtype"] . 
+              "</td><td class=\"infoid\">" . $hubstr . 
               "</td><td class=\"infonum\">" . $options["index"][$bid] . 
               "</td></tr>";
     }
@@ -2831,13 +2982,15 @@ function is_ssl() {
         $hubId = filter_input(INPUT_POST, "hubId", FILTER_SANITIZE_SPECIAL_CHARS);
         $hubAccess = $userAccess;
         $hubEndpt = $userEndpt;
+        $hubName = trim($hubName);
         
         // read the prior options
         $options = readOptions();
         $configoptions = $options["config"];
         
         // either keep the old password or replace if user gave new one
-        if ( $pword!=="" || !array_key_exists("pword", $configoptions) ) {
+        if ( trim($pword)!=="" || !array_key_exists("pword", $configoptions) ) {
+            $pword = trim($pword);
             if ( $pword==="" ) {
                 $pword = "";
             } else {
@@ -2931,8 +3084,37 @@ function is_ssl() {
         writeOptions($options);
 
         // if manual is set the skip OAUTH flow
+        // also proceed with recapturing things from this hub
         if ( $userAccess && $userEndpt ) {
-            header("Location: $returnURL");
+
+            // get all new devices and update the options index array
+            $newthings = getDevices(array(), $hubnum, $hubType, $userAccess, $userEndpt, $clientId, $clientSecret);
+            
+            if ( count($newthings) ) {
+                $options = getOptions($options, $newthings);
+                if ( $hubName === "" ) {
+                    $hubName = getName($userAccess, $userEndpt, $clientId, $clientSecret);
+                }
+                if ( $hubName ) {
+                    $hub["hubName"] = $hubName;
+                    $hubs[$hubnum] = $hub;
+                    $configoptions["hubs"] = $hubs;
+                    $options["config"] = $configoptions;
+                }
+                writeOptions($options);
+            }
+
+            $hpcode = time();
+            $_SESSION["hpcode"] = $hpcode;
+            unset($_SESSION["HP_hubnum"]);
+            $authpage= getAuthPage($returnURL, $hpcode, $hubnum, $newthings);
+            echo htmlHeader($skin);
+            echo $authpage;
+            echo htmlFooter();
+            exit(0);
+//            $_SESSION["HP_hubnum"] = $hubnum;
+//            $_SESSION["hpcode"]= "redoauth";
+//            header("Location: $returnURL");
         } else {
             
             // save the hub number in a session variable
@@ -3023,18 +3205,13 @@ function is_ssl() {
         // get the endpoint if the token is valid
         // this works for either ST or HE hubs
         if ($token) {
-            $endptinfo = getEndpoint($token, $hubHost, $clientId, $hubType);
-            $endpt = $endptinfo[0];
-            if ( $endptinfo[1] && $hubType==="SmartThings" && $hubName==="" ) {
-                $hubName = $endptinfo[1];
-            }
+            $endpt = getEndpoint($token, $hubHost, $clientId, $hubType);
 
             // save auth info in hmoptions file
             // *** IMPT *** this is the info needed to allow HP to read things
             if ($endpt) {
                 $hub["hubAccess"] = $token;
                 $hub["hubEndpt"] = $endpt;
-                $hub["hubName"] = $hubName;
                 $hubs[$hubnum] = $hub;
                 $configoptions["hubs"] = $hubs;
                 
@@ -3043,22 +3220,27 @@ function is_ssl() {
                 
                 // get all new devices and update the options index array
                 $newthings = getDevices(array(), $hubnum, $hubType, $token, $endpt, $clientId, $clientSecret);
-                $options = getOptions($options, $newthings);
+                if ( count($newthings) ) {
+                    $options = getOptions($options, $newthings);
 
-                // write the options file with our credentials
-                // *** IMPT *** if this file write fails, HP will not work properly
-                writeOptions($options);
+                    // get name from the hub if still blank
+                    if ( $hubName==="" ) {
+                        $hubName = getName($token, $endpt, $clientId, $clientSecret);
+                    }
+                    if ( $hubName ) {
+                        $hub["hubName"] = $hubName;
+                        $hubs[$hubnum] = $hub;
+                        $configoptions["hubs"] = $hubs;
+                        $options["config"] = $configoptions;
+                    }
+                    writeOptions($options);
+                }
                 
                 $hpcode = time();
                 $_SESSION["hpcode"] = $hpcode;
                 unset($_SESSION["HP_hubnum"]);
                 $authpage= getAuthPage($returnURL, $hpcode, $hubnum, $newthings);
                 echo htmlHeader($skin);
-//                if ( $hubType==="Hubitat" ) {
-//                    echo "<div class='error'>token= $token endpt= $endpt hubnum= $hubnum host= $hubHost <pre>";
-//                    print_r($newthings);
-//                    echo "</pre></div>";
-//                }
                 echo $authpage;
                 echo htmlFooter();
                 exit(0);
@@ -3766,13 +3948,16 @@ function is_ssl() {
                     $tc.= getNewPage($cnt, $allthings, $room, $kroom, $things, $indexoptions, $kioskmode);
                 }
             }
+            
+            // include doc button
+            $tc.= '<div id="showdocs"><a href="docs/index.html" target="_blank">?</a></div>';
 
             // end of the tabs
             $tc.= "</div>";
 
             // add catalog on right
             // $tc.= getCatalog($allthings);
-
+            
             // end drag region enclosing catalog and main things
             $tc.= "</div>";
 

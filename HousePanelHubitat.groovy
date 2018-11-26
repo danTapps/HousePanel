@@ -17,6 +17,8 @@
  * it displays and enables interaction with switches, dimmers, locks, etc
  * 
  * Revision history:
+ * 11/24/2018 - implement workaround hack to dimmer light inconsistency
+ * 11/21/2018 - add routine to return location name
  * 11/19/2018 - thermostat tweaks to support new custom tile feature 
  * 11/18/2018 - fixed hsm name and mode names to include size cues
  * 11/17/2018 - added Hubitat modes and hsm; removed routines dead code; bugfixes
@@ -39,7 +41,7 @@
  *            - Remove old code block of getHistory code
  * 
  */
-public static String version() { return "v1.793" }
+public static String version() { return "v1.923" }
 public static String handle() { return "HousePanel" }
 definition(
     name: "${handle()}",
@@ -115,6 +117,10 @@ mappings {
   
   path("/doquery") {
      action: [       POST: "doQuery"     ]
+  }
+  
+  path("/gethubinfo") {
+     action: [       POST: "getHubInfo"     ]
   }
 
 }
@@ -324,13 +330,6 @@ def getImage(swid, item=null) {
     return resp
 }
 
-def getRoutine(swid, item=null) {
-    def routines = location.helloHome?.getPhrases()
-    def routine = item ? item : routines.find{it.id == swid}
-    def resp = routine ? [name: routine.label, label: routine.label] : false
-    return resp
-}
-
 // change pistonName to name to be consistent
 // but retain original for backward compatibility reasons
 def getPiston(swid, item=null) {
@@ -446,7 +445,7 @@ def getThings(resp, things, thingtype) {
         log.debug "Number of things of type ${thingtype} = ${n}"
     }
     things?.each {
-		if (thingtype == "switchlevel")
+//		if (thingtype == "switchlevel")
 //		log.debug "HHDEB thing: ${it} ${it.id}"
         def val = getThing(things, it.id, it)
         resp << [name: it.displayName, id: it.id, value: val, type: thingtype]
@@ -459,57 +458,35 @@ def getThings(resp, things, thingtype) {
 def getAllThings() {
 
     def resp = []
-//	log.debug "HHDEB | getSwitches"
     resp = getSwitches(resp)
-//	log.debug "HHDEB | getDimmers"
     resp = getDimmers(resp)
-//	log.debug "HHDEB | getMomentaries"
     resp = getMomentaries(resp)
-//	log.debug "HHDEB | getLights"
     resp = getLights(resp)
-//	log.debug "HHDEB | getBulbs"
     resp = getBulbs(resp)
-//	log.debug "HHDEB | getContacts"
     resp = getContacts(resp)
-//	log.debug "HHDEB | getDoors"
     resp = getDoors(resp)
-//	log.debug "HHDEB | getLocks"
     resp = getLocks(resp)
-//	log.debug "HHDEB | getSensors"
     resp = getSensors(resp)
-//	log.debug "HHDEB | getPresences"
     resp = getPresences(resp)
-//	log.debug "HHDEB | getThermostats"
     resp = getThermostats(resp)
-//	log.debug "HHDEB | getTemperatures"
     resp = getTemperatures(resp)
-//	log.debug "HHDEB | getIlluminances"
     resp = getIlluminances(resp)
-//	log.debug "HHDEB | getValves"
     resp = getValves(resp)
-//	log.debug "HHDEB | getWaters"
     resp = getWaters(resp)
-//	log.debug "HHDEB | getMusics"
     resp = getMusics(resp)
-//	log.debug "HHDEB | getSmokes"
     resp = getSmokes(resp)
     resp = getModes(resp)
     resp = getHsmStates(resp)
-//	log.debug "HHDEB | getOthers"
     resp = getOthers(resp)
-//	log.debug "HHDEB | getBlanks"
     resp = getBlanks(resp)
-//	log.debug "HHDEB | getImages"
     resp = getImages(resp)
     resp = getPowers(resp)
 
     // optionally include pistons based on user option
     if (state.usepistons) {
-//		log.debug "HHDEB | getPistons"
         resp = getPistons(resp)
     }
-//	log.debug "HHDEB | done"
-
+    
     return resp
 }
 // this returns just a single active mode, not the list of available modes
@@ -685,6 +662,12 @@ def getPowers(resp) {
         def multivalue = getThing(mypower, thatid, it)
         resp << [name: it.displayName, id: thatid, value: multivalue, type: "power"]
     }
+    return resp
+}
+
+def getHubInfo() {
+    def resp =  [ sitename: location.getName(),
+                  hubtype: "Hubitat" ]
     return resp
 }
 
@@ -892,9 +875,11 @@ def doQuery() {
     	cmdresult = getPower(swid)
 	break
         break
+    case "hsm" :
+        cmdresult = getHsmState(swid)
+        break
 
     }
-//	log.debug "HHDEB -------- doQuery end"
     return cmdresult
 }
 
@@ -1221,10 +1206,18 @@ def setGenericLight(mythings, swid, cmd, swattr) {
             } else {
                 newonoff = newonoff=="off" ? "on" : "off"
             }
-            newonoff=="on" ? item.on() : item.off()
-            if ( swattr.isNumber() ) {
+            if ( swattr.isNumber() && item.hasCommand("setLevel") ) {
                 newsw = swattr.toInteger()
                 item.setLevel(newsw)
+            }
+            if ( newonoff == "on" ) {
+                item.on()
+            } else {
+                item.off()
+                // address Hubitat bug to set level zero
+                if ( item.hasCommand("setLevel") ) {
+                    item.setLevel(0)
+                }
             }
             skiponoff = true
             break               
@@ -1232,8 +1225,19 @@ def setGenericLight(mythings, swid, cmd, swattr) {
         }
         
         if ( ! skiponoff ) {
-        	newonoff=="on" ? item.on() : item.off()
+            if ( newonoff == "on" ) {
+                item.on()
+            } else {
+                item.off()
+                
+                // address Hubitat bug to set level zero
+                if ( item.hasCommand("setLevel") ) {
+                    item.setLevel(0)
+                }
+            }
+            item.poll()
         }
+        
         resp = [switch: newonoff]
         if ( newsw ) { resp.put("level", newsw) }
         if ( newcolor ) { resp.put("color", newcolor) }
