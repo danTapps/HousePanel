@@ -1047,6 +1047,7 @@ div.switchlevel.level, div.bulb.level, div.music.level {
 }
 
 div.radiobtn.off, div.radiobtn.on {
+    background-image: url("http://cdn.device-icons.smartthings.com/Electronics/electronics10-icn@2x.png");
     background-color: rgba(97,97,97,1);
     color: rgba(255, 255, 255, 0.01);
     height: 112px;

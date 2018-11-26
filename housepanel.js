@@ -1310,8 +1310,10 @@ function updateTile(aid, presult) {
                     $(targetid).addClass(value);
                 
             }
-
-                // update the content 
+            else if ( key === "temperature" )
+            {
+                value = round(value, 0);
+            }
                 if (oldvalue || value) {
                     $(targetid).html(value);
                 }
@@ -1321,6 +1323,10 @@ function updateTile(aid, presult) {
     if ( isclock ) {
         CoolClock.findAndCreateClocks();
     }
+}
+
+function round(value, decimals) {
+  return Number(Math.round(value+'e'+decimals)+'e-'+decimals);
 }
 
 // this differs from updateTile by calling ST to get the latest data first
