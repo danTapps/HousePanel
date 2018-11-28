@@ -1411,7 +1411,7 @@ function timerSetup(hubs) {
         var token = hub.hubAccess;
         var timerval = 60000;
         if ( hubType==="Hubitat" ) {
-            timerval = 10000;
+            timerval = 5000;
         }
         // console.log("hub #" + hubnum + " timer = " + timerval + " hub = " + strObject(hub));
 
@@ -1435,7 +1435,7 @@ function timerSetup(hubs) {
 		            url: returnURL,
 		            data: {useajax: "doquery", id: that[0], type: that[0], value: "none", attr: "none", hubnum: that[2]},
 		            dataType: "json",
-		            timeout: timerval-1000,
+		            timeout: timerval-500,
 		            error: function(jqXHR, textStatus, errorThrown) {
 		              if(textStatus==="timeout") {
 		                //do something on timeout
