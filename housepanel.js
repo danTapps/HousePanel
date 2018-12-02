@@ -5,7 +5,7 @@ var returnURL = "housepanel.php";
 var dragZindex = 1;
 var pagename = "main";
 var mySwitchTimeout;
-
+var wsSocket = null;
 // set this global variable to true to disable actions
 // I use this for testing the look and feel on a public hosting location
 // this way the app can be installed but won't control my home
@@ -1402,8 +1402,75 @@ function setupTabclick() {
     });
 }
 
-function timerSetup(hubs) {
+function getPresultValue(presult, bid) {
+    for (var k in presult)
+    {
+        if (presult[k]['id'] == bid)
+            return presult[k]['value'];
+    }
+    return null;
+}
 
+function setupWebsocketUpdate()
+{
+    if (wsSocket)
+        return;   
+    wsSocket = new WebSocket("ws://192.168.10.207:1337");
+    wsSocket.onopen = function(){
+    }
+    wsSocket.onmessage = function (event) {
+        var presult = JSON.parse(event.data);
+
+        $('div.panel div.thing').each(function() {
+            var aid = $(this).attr("id");
+            // skip the edit in place tile
+            if ( aid.startsWith("t-") ) {
+                aid = aid.substring(2);
+                var tileid = $(this).attr("tile");
+                var bid = $(this).attr("bid");
+
+                if ( bid!=="clockanalogxxx" ) {
+                    var thevalue = getPresultValue(presult, bid);
+                    if (thevalue == null)
+                    {
+                        try {
+                            thevalue = presult[tileid];
+                        } catch (err) {
+                            tileid = parseInt(tileid, 10);
+                            try {
+                                thevalue = presult[tileid];
+                            } catch (err) {}
+                        }
+                    }
+                    // handle both direct values and bundled values
+                    if ( thevalue && thevalue.hasOwnProperty("value") ) {
+                    thevalue = thevalue.value;
+                    }
+                    if ( thevalue && thevalue!==undefined ) { updateTile(aid,thevalue); }
+                }
+            }
+        });
+    }
+    wsSocket.onclose = function(){
+        wsSocketCheck()
+    }
+    wsSocket.onclose = function(){
+        // Try to reconnect in 5 seconds
+        setTimeout(function(){wsSocketCheck()}, 5000);
+    };
+}
+function wsSocketCheck()
+{
+    if(!wsSocket || wsSocket.readyState==3)
+    {
+        wsSocket = null;
+        setupWebsocketUpdate();
+        
+    }
+}
+function timerSetup(hubs) {
+    setupWebsocketUpdate();
+    setInterval(wsSocketCheck, 5000);
     // loop through every hub
     $.each(hubs, function (hubnum, hub) {
 
