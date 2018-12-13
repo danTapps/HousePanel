@@ -1984,7 +1984,7 @@ function readOptions() {
 function writeOptions($options) {
     $options["time"] = HPVERSION . " @ " . strval(time());
     $f = fopen("hmoptions.cfg","wb");
-    $str =  json_encode($options);
+    $str =  json_encode($options, JSON_PRETTY_PRINT);
     fwrite($f, cleanupStr($str));
     fflush($f);
     fclose($f);
@@ -2052,7 +2052,7 @@ function refactorOptions($allthings) {
 // new routine that renumbers all the things in your options file from 1
 // NOTE: this also affects the custom tile settings
 //       refactor now also modifies customtiles.css by reading and writing it
-
+    return;
     // load in custom css strings
     $customcss = readCustomCss();
     $updatecss = false;
@@ -2085,7 +2085,9 @@ function refactorOptions($allthings) {
         }
         
         foreach ($oldoptions["things"] as $room => $thinglist) {
+            error_log("Working on room " . $room);
             foreach ($thinglist as $key => $pidpos) {
+                error_log("\tWorking on room " . $room . " thing " . $key);
                 $zindex = 1;
                 $customname = "";
                 if ( is_array($pidpos) ) {
@@ -2105,8 +2107,8 @@ function refactorOptions($allthings) {
 
 //  use the commented code below if you want to preserve any user movements
 //  otherwise a refactor call resets all tiles to their baseeline position  
-//                  $options["things"][$room][$key] = array($cnt,$postop,$posleft,$zindex,"");
-                    $options["things"][$room][$key] = array($cnt,0,0,1,$customname);
+                  $options["things"][$room][$key] = array($cnt,$postop,$posleft,$zindex,"");
+//                    $options["things"][$room][$key] = array($cnt,0,0,1,$customname);
                 }
             }
         }
