@@ -13,6 +13,8 @@ var wsSocket = null;
 // use the timers options to turn off polling
 var disablepub = false;
 var disabletimers = false;
+var allHubs = [];
+
 
 Number.prototype.pad = function(size) {
     var s = String(this);
@@ -1472,6 +1474,8 @@ function timerSetup(hubs) {
     setupWebsocketUpdate();
     setInterval(wsSocketCheck, 5000);
     // loop through every hub
+    allHubs = [];
+ 
     $.each(hubs, function (hubnum, hub) {
 
         var hubType = hub.hubType;
@@ -1492,7 +1496,7 @@ function timerSetup(hubs) {
             if ( priorOpmode !== "Operate" || modalStatus  || !token) { 
                 // console.log ("Timer Hub #" + that[2] + " skipped: opmode= " + priorOpmode + " modalStatus= " + modalStatus+" token= " + token);
                 // repeat the method above indefinitely
-                setTimeout(function() {updarray.myMethod();}, this[1]);
+                this.jsTimer = setTimeout(function() {updarray.myMethod();}, this[1]);
                 return; 
             }
             console.log("refresh everything from " + returnURL + " id: " + that[0] + " type: " + that[0] + " hubnum: " + that[2]);
@@ -1549,11 +1553,11 @@ function timerSetup(hubs) {
             }
 
             // repeat the method above indefinitely
-            setTimeout(function() {updarray.myMethod();}, this[1]);
+            this.jsTimer = setTimeout(function() {updarray.myMethod();}, this[1]);
         };
-
         // wait before doing first one
-        setTimeout(function() {updarray.myMethod();}, timerval);
+        updarray.jsTimer = setTimeout(function() {updarray.myMethod();}, timerval);
+        allHubs.push(updarray);
         
     });
     
@@ -1788,7 +1792,11 @@ function setupPage(trigger) {
     });
     $("div.overlay > div").off("click.tileactions");
     $("div.overlay > div").on("click.tileactions", function(event) {
-        
+       
+        $.each(allHubs, function (hubnum, hub) {
+            clearTimeout(hub.jsTimer);
+            hub.jsTimer = setTimeout(function() {hub.myMethod();}, hub[1]);
+        });
         var aid = $(this).attr("aid");
         var theclass = $(this).attr("class");
         var subid = $(this).attr("subid");
