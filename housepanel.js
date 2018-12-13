@@ -1291,10 +1291,8 @@ function fixTrack(tval) {
 // note that some sub-items can update the values of other subitems
 // this is exactly what happens in music tiles when you hit next and prev song
 function updateTile(aid, presult) {
-
     // do something for each tile item returned by ajax call
     var isclock = false;
-    
     $.each( presult, function( key, value ) {
         var targetid = '#a-'+aid+'-'+key;
 
@@ -1580,7 +1578,6 @@ function updateMode() {
 // that way we don't need to wait for the timers to kick in to update
 // the visual items that people will expect to see right away
 function updAll(trigger, aid, bid, thetype, hubnum, pvalue) {
-
     // update trigger tile first
     // alert("trigger= "+trigger+" aid= "+aid+" bid= "+bid+" type= "+thetype+" pvalue= "+strObject(pvalue));
     if ( trigger !== "slider") {
@@ -1825,6 +1822,7 @@ function setupPage(trigger) {
         // for most things the behavior will be driven by the class value = swattr
         if (subid==="switch" || subid==="lock" || (thetype==="door" && subid==="door") ) {
             thevalue = "toggle";
+            console.log($(targetid).html());
         // handle shm special case
         } else if ( (thetype=="shm" || thetype=="custom") && subid=="state" )  {
             thevalue = $(targetid).html();
