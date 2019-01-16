@@ -1,5 +1,6 @@
 // jquery functions to do Ajax on housepanel.php
 var modalStatus = 0;
+var modalWindows = [];
 var priorOpmode = "Operate";
 var returnURL = "housepanel.php";
 var dragZindex = 1;
@@ -13,8 +14,19 @@ var wsSocket = null;
 // use the timers options to turn off polling
 var disablepub = false;
 var disabletimers = false;
-var allHubs = [];
+// smart things timer once a minute
+var st_timer = 60000;
 
+// hubitat timer once every 30 seconds
+var he_timer = 30000;
+
+// fast timer is every 10 seconds
+var fast_timer = 10000;
+
+// slow timer is once an hour
+var slow_timer = 3600000;
+
+var allHubs = [];
 
 Number.prototype.pad = function(size) {
     var s = String(this);
@@ -89,7 +101,13 @@ $(document).ready(function() {
     if ( defaultTab ) {
         try {
             $("#"+defaultTab).click();
-        } catch (e) {}
+        } catch (e) {
+            defaultTab = $("#roomtabs").children().first().attr("aria-labelledby");
+            setCookie('defaultTab', defaultTab, 30);
+            try {
+                $("#"+defaultTab).click();
+            } catch (f) {}
+        }
     }
 
     // hide the skin and 
@@ -133,18 +151,38 @@ $(document).ready(function() {
         // if you do this manual controls will not be reflected in panel
         // but you can always run a refresh to update the panel manually
         // or you can run it every once in a blue moon too
-        // any value less than 5000 (5 sec) will be interpreted as never
+        // any value less than 1000 (1 sec) will be interpreted as never
         // note - with multihub we now use hub type to set the timer
+        var hubstr = $("input[name='allHubs']").val();
+        try {
+            var hubs = JSON.parse(hubstr);
+        } catch(e) {
+            console.log ("Couldn't find any hubs; hub raw str = " + hubstr);
+        }
 
-        if ( !disabletimers ) {
-            var hubstr = $("input[name='allHubs']").val();
-            try {
-                var hubs = JSON.parse(hubstr);
-                timerSetup(hubs);
-            } catch(e) {
-                console.log ("Couldn't find any hubs");
-                console.log ("hub raw str = " + hubstr);
-            }
+        if ( hubs && typeof hubs === "object" ) {
+            // loop through every hub
+            allHubs = [];
+            setupWebsocketUpdate();
+            setInterval(wsSocketCheck, 5000);
+            $.each(hubs, function (hubnum, hub) {
+                var hubType = hub.hubType;
+                var timerval = st_timer;
+                if ( hubType==="Hubitat" ) {
+                    timerval = he_timer;
+                }
+                if ( timerval && timerval >= 1000 ) {
+                    setupTimer(timerval, "all", hubnum);
+                }
+            });
+        }
+        
+        // this can be disabled by setting anything less than 1000
+        if ( fast_timer && fast_timer >= 1000 ) {
+            setupTimer(fast_timer, "fast", -1);
+        }
+        if ( slow_timer && slow_timer >= 1000 ) {
+            setupTimer(slow_timer, "slow", -1);
         }
 
         cancelDraggable();
@@ -205,17 +243,26 @@ function getMaxZindex() {
     });
 }
 
-function convertToModal(modalcontent) {
-    modalcontent = modalcontent + '<div class="modalbuttons"><button name="okay" id="modalokay" class="dialogbtn okay">Okay</button>';
-    modalcontent = modalcontent + '<button name="cancel" id="modalcancel" class="dialogbtn cancel">Cancel</button></div>';
+function convertToModal(modalcontent, addok) {
+    if ( typeof addok === "string" )
+    {
+        modalcontent = modalcontent + '<div class="modalbuttons"><button name="okay" id="modalokay" class="dialogbtn okay">' + addok + '</button>';
+    } else {
+        modalcontent = modalcontent + '<div class="modalbuttons"><button name="okay" id="modalokay" class="dialogbtn okay">Okay</button>';
+        modalcontent = modalcontent + '<button name="cancel" id="modalcancel" class="dialogbtn cancel">Cancel</button></div>';
+    }
     return modalcontent;
 }
 
-function createModal(modalcontent, modaltag, addok,  pos, responsefunction, loadfunction) {
-    var modalid = "modalid";
+function createModal(modalid, modalcontent, modaltag, addok,  pos, responsefunction, loadfunction) {
+    // var modalid = "modalid";
     
     // skip if a modal is already up...
-    if ( modalStatus ) { return; }
+    if ( modalWindows[modalid]!==null && modalWindows[modalid]>0 ) { return; }
+    
+    modalWindows[modalid] = 1;
+    modalStatus = modalStatus + 1;
+    
     var modaldata = modalcontent;
     var modalhook;
     
@@ -236,13 +283,12 @@ function createModal(modalcontent, modaltag, addok,  pos, responsefunction, load
     
     modalcontent = "<div id='" + modalid +"' class='modalbox'" + styleinfo + ">" + modalcontent;
     if ( addok ) {
-        modalcontent = convertToModal(modalcontent);
+        modalcontent = convertToModal(modalcontent, addok);
     }
     modalcontent = modalcontent + "</div>";
     
     // console.log("modalcontent = " + modalcontent);
-    modalhook.prepend(modalcontent);
-    modalStatus = 1;
+    modalhook.append(modalcontent);
     
     // call post setup function if provided
     if ( loadfunction ) {
@@ -253,11 +299,10 @@ function createModal(modalcontent, modaltag, addok,  pos, responsefunction, load
     if ( addok ) {
         $("#"+modalid).on("click",".dialogbtn", function(evt) {
             // alert("clicked on button");
-            modalStatus = 0;
             if ( responsefunction ) {
                 responsefunction(this, modaldata);
             }
-            closeModal();
+            closeModal(modalid);
         });
     } else {
         $("body").on("click",function(evt) {
@@ -265,10 +310,10 @@ function createModal(modalcontent, modaltag, addok,  pos, responsefunction, load
                 evt.stopPropagation();
                 return;
             } else {
-                closeModal();
                 if ( responsefunction ) {
                     responsefunction(evt.target, modaldata);
                 }
+                closeModal(modalid);
             }
         });
         
@@ -276,9 +321,11 @@ function createModal(modalcontent, modaltag, addok,  pos, responsefunction, load
     
 }
 
-function closeModal() {
-    $("#modalid").remove();
-    modalStatus = 0;
+function closeModal(modalid) {
+    $("#"+modalid).remove();
+    modalWindows[modalid] = 0;
+    modalStatus = modalStatus - 1;
+    // alert("Closing modal. modalstatus = " + modalStatus);
 }
 
 function setupColors() {
@@ -312,10 +359,10 @@ function setupColors() {
                 var bidupd = bid;
                 var thetype = $(tile).attr("type");
                 var ajaxcall = "doaction";
-                if ( bid.startsWith("h_") ) {
-                    // ajaxcall = "dohubitat";
-                    bid = bid.substring(2);
-                }
+//                if ( bid.startsWith("h_") ) {
+//                    // ajaxcall = "dohubitat";
+//                    bid = bid.substring(2);
+//                }
 //                 alert("posting change to color= hsl= " + hslstr + " bid= " + bid);
                 $.post(returnURL, 
                        {useajax: ajaxcall, id: bid, type: thetype, value: hslstr, attr: "color", hubnum: hubnum},
@@ -350,17 +397,31 @@ function setupSliders() {
             var ajaxcall = "doaction";
             var subid = thing.attr("subid");
             var thevalue = parseInt(ui.value);
-            if ( bid.startsWith("h_") ) {
-                // ajaxcall = "dohubitat";
-                bid = bid.substring(2);
-            }
             var thetype = $(tile).attr("type");
-            console.log(ajaxcall + " : id= "+bid+" type= "+thetype+ " subid= " + subid + " value= "+thevalue);
+            
+            var usertile = thing.siblings(".user_hidden");
+            var command = "";
+            var linktype = thetype;
+            var linkval = "";
+            if ( usertile && $(usertile).attr("command")!==undefined ) {
+                command = $(usertile).attr("command");    // command type
+                if ( !thevalue ) {
+                    thevalue = $(usertile).attr("value");      // raw user provided val
+                }
+                linkval = $(usertile).attr("linkval");    // urlencooded val
+                linktype = $(usertile).attr("linktype");  // type of tile linked to
+            }
+            
+//            if ( bid.startsWith("h_") ) {
+//                // ajaxcall = "dohubitat";
+//                bid = bid.substring(2);
+//            }
+            console.log(ajaxcall + ": command= " + command + " id= "+bid+" type= "+linktype+ " value= " + thevalue + " subid= " + subid + " command= " + command + " linkval= "+linkval);
             
             // handle music volume different than lights
             if ( thetype != "music") {
                 $.post(returnURL, 
-                       {useajax: ajaxcall, id: bid, type: thetype, value: thevalue, attr: "level", subid: subid, hubnum: hubnum},
+                       {useajax: ajaxcall, id: bid, type: linktype, value: thevalue, attr: "level", subid: subid, hubnum: hubnum, command: command, linkval: linkval},
                        function (presult, pstatus) {
                             if (pstatus==="success" ) {
                                 console.log( ajaxcall + " POST returned: "+ strObject(presult) );
@@ -370,7 +431,7 @@ function setupSliders() {
                 );
             } else {
                 $.post(returnURL, 
-                       {useajax: ajaxcall, id: bid, type: thetype, value: thevalue, attr: "level", subid: subid, hubnum: hubnum},
+                       {useajax: ajaxcall, id: bid, type: linktype, value: thevalue, attr: "level", subid: subid, hubnum: hubnum, command: command, linkval: linkval},
                        function (presult, pstatus) {
                             if (pstatus==="success" ) {
                                 console.log( ajaxcall + " POST returned: "+ strObject(presult) );
@@ -407,14 +468,30 @@ function setupSliders() {
             var hubnum = $(tile).attr("hub");
             var bidupd = bid;
             var ajaxcall = "doaction";
-            if ( bid.startsWith("h_") ) {
-                // ajaxcall = "dohubitat";
-                bid = bid.substring(2);
-            }
+//            if ( bid.startsWith("h_") ) {
+//                // ajaxcall = "dohubitat";
+//                bid = bid.substring(2);
+//            }
+            var subid = thing.attr("subid");
+            var thevalue = parseInt(ui.value);
             var thetype = $(tile).attr("type");
+            var usertile = thing.siblings(".user_hidden");
+            var command = "";
+            var linktype = thetype;
+            var linkval = "";
+            if ( usertile ) {
+                command = $(usertile).attr("command");    // command type
+                if ( !thevalue ) {
+                    thevalue = $(usertile).attr("value");      // raw user provided val
+                }
+                linkval = $(usertile).attr("linkval");    // urlencooded val
+                linktype = $(usertile).attr("linktype");  // type of tile linked to
+            }
+            
+            console.log(ajaxcall + ": command= " + command + " id= "+bid+" type= "+linktype+ " value= " + thevalue + " subid= " + subid + " command= " + command + " linkval= "+linkval);
             
             $.post(returnURL, 
-                   {useajax: ajaxcall, id: bid, type: thetype, value: parseInt(ui.value), attr: "colorTemperature", hubnum: hubnum },
+                   {useajax: ajaxcall, id: bid, type: thetype, value: parseInt(ui.value), attr: "colorTemperature", hubnum: hubnum, command: command, linkval: linkval },
                    function (presult, pstatus) {
                         if (pstatus==="success" ) {
                             console.log( ajaxcall + " POST returned: "+ strObject(presult) );
@@ -465,6 +542,9 @@ function cancelSortable() {
             $(this).sortable("destroy");
         }
     });
+    $("div.sortnum").each(function() {
+       $(this).remove();
+    });
 }
 
 function cancelPagemove() {
@@ -509,6 +589,18 @@ function setupPagemove() {
 }
 
 function setupSortable() {
+    
+    // loop through each room panel
+    $("div.panel").each( function() {
+        var roomtitle = $(this).attr("title");
+        
+        // loop through each thing in this room and number it
+        var num = 0;
+        $("div.thing[panel="+roomtitle+"]").each(function(){
+            num++;
+            addSortNumber(this, num.toString());
+        });
+    });
 
     $("div.panel").sortable({
         containment: "parent",
@@ -520,19 +612,31 @@ function setupSortable() {
             // var tile = $(ui.item).attr("tile");
             var roomtitle = $(ui.item).attr("panel");
             var things = [];
+            var num = 0;
             $("div.thing[panel="+roomtitle+"]").each(function(){
                 var tilename = $(this).find("span").text();
                 var tile = $(this).attr("tile");
                 things.push([tile, tilename]);
+                num++;
+                
+                // update the sorting numbers to show new order
+                updateSortNumber(this, num.toString());
             });
-            console.log("reordered tiles: " + things);
+            console.log("reordered " + num + " tiles:\n" + strObject(things));
             $.post(returnURL, 
                    {useajax: "pageorder", id: "none", type: "things", value: things, attr: roomtitle}
             );
         }
     });
-        
-    
+}
+
+function addSortNumber(thetile, num) {
+   var sortdiv = "<div class=\"sortnum\">" + num + "</div>";
+   $(thetile).append(sortdiv);
+}
+
+function updateSortNumber(thetile, num) {
+   $(thetile).children(".sortnum").html(num);
 }
 
 var startPos = {top: 0, left: 0, zindex: 0};
@@ -600,7 +704,7 @@ function setupDraggable() {
                 }
                 return accepting;
             },
-            tolerance: "fit",
+            tolerance: "intersect",
             drop: function(event, ui) {
                 var thing = ui.draggable;
                 var bid = $(thing).attr("bid");
@@ -619,7 +723,7 @@ function setupDraggable() {
                             var panel = $("#"+clickid).text();
                             var lastthing = $("div.panel-"+panel+" div.thing").last();
                             var pos = {left: 400, top: 100};
-                            createModal("Add: "+ thingname + " of Type: "+thingtype+" to Room: "+panel+"?<br />Are you sure?","body", true, pos, function(ui, content) {
+                            createModal("modaladd","Add: "+ thingname + " of Type: "+thingtype+" to Room: "+panel+"?<br />Are you sure?","body", true, pos, function(ui, content) {
                                 var clk = $(ui).attr("name");
                                 if ( clk==="okay" ) {
                                     // add it to the system
@@ -696,14 +800,6 @@ function setupDraggable() {
         // enable dropping things from panel into catalog to remove
         $("#catalog").droppable({
             accept: "div.panel div.thing",
-    //        accept: function(thing) {
-    //            var accepting = false;
-    //            if ( thing.hasClass("panel") && modalStatus===0 ) {
-    //                accepting = true;
-    //            }
-    ////            alert("modalStatus = " + modalStatus);
-    //            return accepting;
-    //        },
             tolerance: "fit",
             drop: function(event, ui) {
                 var thing = ui.draggable;
@@ -717,7 +813,7 @@ function setupDraggable() {
                 var tilename = $("span.original.n_"+tile).html();
                 var pos = {top: 100, left: 10};
 
-                createModal("Remove: "+ tilename + " of type: "+thingtype+" from room "+panel+"? Are you sure?", "body" , true, pos, function(ui, content) {
+                createModal("modaladd","Remove: "+ tilename + " of type: "+thingtype+" from room "+panel+"? Are you sure?", "body" , true, pos, function(ui, content) {
                     var clk = $(ui).attr("name");
                     if ( clk=="okay" ) {
                         // remove it from the system
@@ -753,7 +849,7 @@ function setupDraggable() {
 
 function dynoForm(ajaxcall, content, idval, typeval) {
     idval = idval ? idval : 0;
-    typeval = typeval ? typeval : "none";
+    typeval = typeval ? typeval : "dynoform";
     content = content ? content : "";
     
     var controlForm = $('<form>', {'name': 'controlpanel', 'action': returnURL, 'target': '_top', 'method': 'POST'});
@@ -775,90 +871,109 @@ function dynoForm(ajaxcall, content, idval, typeval) {
     return controlForm;
 }
 
-function setupButtons() {
+function execButton(buttonid) {
+    
+    // alert("prior= " + priorOpmode + " buttonid= " + buttonid);
+    // blank out screen with a black box size of the window and pause timers
+    if ( buttonid === "blackout") {
+        var w = window.innerWidth;
+        var h = window.innerHeight;            
+        priorOpmode = "Sleep";
+        $("div.maintable").after("<div id=\"blankme\"></div>");
+        $("#blankme").css( {"height":h+"px", "width":w+"px", 
+                            "position":"absolute", "background-color":"black",
+                            "left":"0px", "top":"0px", "z-index":"9999" } );
 
-    function execButton(buttonid) {
-        // blank out screen with a black box size of the window and pause timers
-        if ( buttonid === "blackout") {
-            var w = window.innerWidth;
-            var h = window.innerHeight;            
-            priorOpmode = "Sleep";
-            $("div.maintable").after("<div id=\"blankme\"></div>");
-            $("#blankme").css( {"height":h+"px", "width":w+"px", 
-                                "position":"absolute", "background-color":"black",
-                                "left":"0px", "top":"0px", "z-index":"9999" } );
-            
-            // clicking anywhere will restore the window to normal
-            $("#blankme").on("click", function(event) {
-               $("#blankme").remove(); 
-                priorOpmode = "Operate";
-                event.stopPropagation();
-            });
-        } else if ( buttonid === "restoretabs") {
-            toggleTabs();
-        } else {
-            var newForm = dynoForm(buttonid);
-            newForm.submit();
+        // clicking anywhere will restore the window to normal
+        $("#blankme").on("click", function(event) {
+           $("#blankme").remove(); 
+            priorOpmode = "Operate";
+            event.stopPropagation();
+        });
+    } else if ( buttonid === "toggletabs") {
+        toggleTabs();
+    } else if ( buttonid === "reorder" ) {
+        if ( priorOpmode === "DragDrop" ) {
+            updateFilters();
+            cancelDraggable();
+            delEditLink();
         }
+        setupSortable();
+        setupPagemove();
+        $("#mode_Reorder").prop("checked",true);
+        priorOpmode = "Reorder";
+    } else if ( buttonid === "edit" ) {
+        // show the skin for swapping on main screen
+        if ( priorOpmode === "Reorder" ) {
+            cancelSortable();
+            cancelPagemove();
+        }
+        $("div.skinoption").show();
+        setupDraggable();
+        addEditLink();
+        $("#mode_Edit").prop("checked",true);
+        priorOpmode = "DragDrop";
+    } else if ( buttonid==="showdoc" ) {
+        window.open("docs/index.html",'_blank');
+        return;
+    } else if ( buttonid==="name" ) {
+        return;
+    } else if ( buttonid==="operate" ) {
+        if ( priorOpmode === "Reorder" ) {
+            cancelSortable();
+            cancelPagemove();
+            // delEditLink();
+            // location.reload(true);
+        } else if ( priorOpmode === "DragDrop" ) {
+            updateFilters();
+            cancelDraggable();
+            delEditLink();
+            // location.reload(true);
+        }
+        $("#mode_Operate").prop("checked",true);
+        priorOpmode = "Operate";
+    } else {
+        var newForm = dynoForm(buttonid);
+        newForm.submit();
     }
+}
+
+function updateFilters() {
+    var filters = [];
+    $('input[name="useroptions[]"').each(function(){
+        if ( $(this).prop("checked") ) {
+            filters.push($(this).attr("value")); 
+        }
+    });
+    var newskin = $("#skinid").val();
+    $.post(returnURL, 
+        {useajax: "savefilters", id: 0, type: "none", value: filters, attr: newskin}
+    );
+}
+
+function setupButtons() {
 
     if ( pagename==="main" && !disablepub ) {
         $("#controlpanel").on("click", "div.formbutton", function() {
             var buttonid = $(this).attr("id");
             if ( $(this).hasClass("confirm") ) {
                 var pos = {top: 100, left: 100};
-                createModal("Perform " + buttonid + " operation... Are you sure?", "body", true, pos, function(ui, content) {
+                createModal("modalexec","Perform " + buttonid + " operation... Are you sure?", "body", true, pos, function(ui, content) {
                     var clk = $(ui).attr("name");
                     if ( clk==="okay" ) {
                         execButton(buttonid);
+                        $(this).stopPropagation();
                     }
                 });
             } else {
                 execButton(buttonid);
+                // $(this).stopPropagation();
             }
         });
 
         $("div.modeoptions").on("click","input.radioopts",function(evt){
             var opmode = $(this).attr("value");
-            if ( opmode !== priorOpmode ) {
-                if ( priorOpmode === "Reorder" ) {
-                    cancelSortable();
-                    cancelPagemove();
-                    delEditLink();
-                } else if ( priorOpmode === "DragDrop" ) {
-                    var filters = [];
-                    $('input[name="useroptions[]"').each(function(){
-                        if ( $(this).prop("checked") ) {
-                            filters.push($(this).attr("value")); 
-                        }
-                    });
-                    var newskin = $("#skinid").val();
-                    $.post(returnURL, 
-                        {useajax: "savefilters", id: 0, type: "none", value: filters, attr: newskin}
-                    );
-                    cancelDraggable();
-                    delEditLink();
-                }
-
-                if ( opmode==="Reorder" ) {
-                    setupSortable();
-                    setupPagemove();
-                    delEditLink();
-                } else if ( opmode==="DragDrop" ) {
-                    // show the skin for swapping on main screen
-                    $("div.skinoption").show();
-                    
-                    // set up draggable things and add edit links
-                    setupDraggable();
-                    addEditLink();
-
-                // reload page fresh if we are returning from drag mode to operate mode
-                } else if ( opmode==="Operate" ) {
-                    location.reload(true);
-                }
-
-                priorOpmode = opmode;
-            }
+            execButton(opmode);
         });
     }
 
@@ -873,11 +988,84 @@ function setupButtons() {
                 }
             });
             $(target).removeClass("hidden");
+            $("#newthingcount").html("");
+        });
+        
+        // handle auth submissions
+        // add on one time info from user
+        $("input.hubauth").click(function(evt) {
+            var hubnum = $(this).attr("hub");
+//            var request = new XMLHttpRequest();
+//            request.open("POST", returnURL, false);
+            var myform = document.getElementById("hubform_"+hubnum);
+            var formData = new FormData(myform);
+            
+            var tz = $("#newtimezone").val();
+            var skindir = $("#newskindir").val();
+            var uname = $("#uname").val();
+            var pword = $("#pword").val();
+            var kiosk = "false";
+            var attrdata = {timezone: tz, skindir: skindir, uname: uname, pword: pword, kiosk: kiosk};
+            console.log ( attrdata );
+
+            // **********************************************
+            // TODO - add input checking
+            // **********************************************
+            
+            formData.append("timezone", tz);
+            formData.append("skindir", skindir);
+            formData.append("uname", uname);
+            formData.append("pword", pword);
+            formData.append("use_kiosk", kiosk);
+            var defhub = formData.get("hubnum");
+            var hubHost = formData.get("hubHost");
+            var clientId = formData.get("clientId");
+
+            // console.log ( myform );
+            // alert("hubHost= " + formData.get("hubHost"));
+            // netbeans thinks this is bad js syntax but it isn't
+            var values = {};
+            for (var vals of formData.entries()) {
+                var key = vals[0];
+                values[key] = vals[1];
+            }
+            console.log( values );
+            $.post(returnURL, values, function(presult, pstatus) {
+                console.log( presult );
+                var obj = presult;
+                if ( obj.action === "things" ) {
+                    var ntc = "Hub #" + defhub + " was authorized and " + obj.count + " devices were retrieved.";
+                    $("#newthingcount").html(ntc);
+                }
+
+                // if oauth flow then start the process
+                if ( obj.action === "oauth" ) {
+                    var nvpreq= "response_type=code&client_id=" + encodeURI(clientId) + "&scope=app&redirect_uri=" + encodeURI(returnURL);
+                    var location = hubHost + "/oauth/authorize?" + nvpreq;
+                    window.location.href = location;
+                }
+            },"json");
+            // request.send(formData);
+            
+                        
+            
+            evt.stopPropagation(); 
         });
 
         $("#cancelauth").click(function(evt) {
+            var tz = $("#newtimezone").val();
+            var skindir = $("#newskindir").val();
+            var uname = $("#uname").val();
+            var pword = $("#pword").val();
+            var kiosk = $("#use_kiosk").val();
+
+            // **********************************************
+            // TODO - add input checking
+            // **********************************************
+            
+            var attrdata = {timezone: tz, skindir: skindir, uname: uname, pword: pword, kiosk: kiosk};
             $.post(returnURL, 
-                {useajax: "cancelauth", id: 1, type: "none", value: "none", attr: "none"},
+                {useajax: "cancelauth", id: 1, type: "none", value: "none", attr: attrdata},
                 function (presult, pstatus) {
                     if (pstatus==="success" && presult==="success") {
                         window.location.href = returnURL;
@@ -895,8 +1083,9 @@ function addEditLink() {
     // add links to edit and delete this tile
     $("div.panel > div.thing").each(function() {
        var editdiv = "<div class=\"editlink\" aid=" + $(this).attr("id") + "> </div>";
+       var cmzdiv = "<div class=\"cmzlink\" aid=" + $(this).attr("id") + "> </div>";
        var deldiv = "<div class=\"dellink\" aid=" + $(this).attr("id") + "> </div>";
-       $(this).append(editdiv).append(deldiv);
+       $(this).append(editdiv).append(cmzdiv).append(deldiv);
     });
     
     // add links to edit page tabs
@@ -908,24 +1097,32 @@ function addEditLink() {
     })
     
     // add link to add a new page
-    var editdiv = "<div class=\"addpage\" roomnum=\"new\">Add</div>";
+    var editdiv = "<div id=\"addpage\" class=\"addpage\" roomnum=\"new\">Add</div>";
     $("#roomtabs").append(editdiv);
     
     $("div.editlink").on("click",function(evt) {
-        var thing = "#" + $(evt.target).attr("aid");
-//        $(thing + ">div.editlink").remove();
-//        $(thing + ">div.dellink").remove();
-//        $(thing).draggable("destroy");
-        
+        var aid = $(evt.target).attr("aid");
+        var thing = "#" + aid;
         var str_type = $(thing).attr("type");
         var tile = $(thing).attr("tile");
         var strhtml = $(thing).html();
         var thingclass = $(thing).attr("class");
+        var bid = $(thing).attr("bid");
         var hubnum = $(thing).attr("hub");
         
         // replace all the id tags to avoid dynamic updates
         strhtml = strhtml.replace(/ id="/g, " id=\"x_");
-        editTile(str_type, tile, thingclass, hubnum, strhtml);
+        editTile(str_type, tile, aid, bid, thingclass, hubnum, strhtml);
+    });
+    
+    $("div.cmzlink").on("click",function(evt) {
+        var aid = $(evt.target).attr("aid");
+        var thing = "#" + aid;
+        var str_type = $(thing).attr("type");
+        var tile = $(thing).attr("tile");
+        var bid = $(thing).attr("bid");
+        var hubnum = $(thing).attr("hub");
+        customizeTile(tile, aid, bid, str_type, hubnum);
     });
     
     $("div.dellink").on("click",function(evt) {
@@ -938,7 +1135,7 @@ function addEditLink() {
         var tilename = $("span.original.n_"+tile).html();
         var pos = {top: 100, left: 10};
 
-        createModal("Remove: "+ tilename + " of type: "+str_type+" from hub #" + hubnum + " & room "+panel+"? Are you sure?", "body" , true, pos, function(ui, content) {
+        createModal("modaladd","Remove: "+ tilename + " of type: "+str_type+" from hub #" + hubnum + " & room "+panel+"? Are you sure?", "body" , true, pos, function(ui, content) {
             var clk = $(ui).attr("name");
             if ( clk==="okay" ) {
                 // remove it from the system
@@ -965,7 +1162,7 @@ function addEditLink() {
         var roomname = $(evt.target).attr("roomname");
         var clickid = $(evt.target).parent().attr("aria-labelledby");
         var pos = {top: 100, left: 10};
-        createModal("Remove Room #" + roomnum + " with Name: " + roomname +" from HousePanel. Are you sure?", "body" , true, pos, function(ui, content) {
+        createModal("modaladd","Remove Room #" + roomnum + " with Name: " + roomname +" from HousePanel. Are you sure?", "body" , true, pos, function(ui, content) {
             var clk = $(ui).attr("name");
             if ( clk==="okay" ) {
                 // remove it from the system
@@ -998,14 +1195,14 @@ function addEditLink() {
         var roomnum = $(evt.target).attr("roomnum");
         var roomname = $(evt.target).attr("roomname");
         var thingclass = $(evt.target).attr("class");
-        editTile("page", roomname, thingclass, roomnum, "");
+        editTile("page", roomname, 0, 0, thingclass, roomnum, "");
     });
    
-    $("#roomtabs div.addpage").off("click");
-    $("#roomtabs div.addpage").on("click",function(evt) {
+    $("#addpage").off("click");
+    $("#addpage").on("click",function(evt) {
         var clickid = $(evt.target).attr("aria-labelledby");
         var pos = {top: 100, left: 10};
-        createModal("Add New Room to HousePanel. Are you sure?", "body" , true, pos, function(ui, content) {
+        createModal("modaladd","Add New Room to HousePanel. Are you sure?", "body" , true, pos, function(ui, content) {
             var clk = $(ui).attr("name");
             if ( clk==="okay" ) {
                 $.post(returnURL, 
@@ -1029,6 +1226,9 @@ function delEditLink() {
     $("div.editlink").each(function() {
        $(this).remove();
     });
+    $("div.cmzlink").each(function() {
+       $(this).remove();
+    });
     $("div.dellink").each(function() {
        $(this).remove();
     });
@@ -1038,50 +1238,13 @@ function delEditLink() {
     $("div.delpage").each(function() {
        $(this).remove();
     });
+    $("div.addpage").each(function() {
+       $(this).remove();
+    });
     // hide the skin and 
     $("div.skinoption").hide();
     
-    closeModal();
-}
-
-
-// work in progress - this will eventually be a room editor
-function pageEdit() {
-
-    var tc = "";
-    var goodrooms = false;
-    tc = tc + "<div id='dynocontent'><h2>Page Editor</h2>";
-    tc = tc + "<div>With this module you can rename, delete, or add new pages</div>";
-    var pos = {top: 100, left: 100};
-    
-    $("#roomtabs > li.ui-tab").each(function() {
-        var roomname = $(this).text();
-        var roomid = $(this).attr("roomnum");
-        tc = tc + "<div class='roomedit'>";
-        tc = tc + "<input type='number' min=0 step=1 max=20 size='4' name='id-" + roomid+"' value='" + roomid+"' /><input name='rn-"+roomid+"' value='"+roomname+"'/>";
-        tc = tc + "<button roomid='" + roomid + "' class='roomdel'>Del</button>";
-        tc = tc + "</div>";
-        goodrooms = true;
-    });
-    tc = tc + "</div>";
-    
-    if ( goodrooms ) {
-        createModal(tc,"#roomtabs", true, pos, function(ui, content) {
-            var clk = $(ui).attr("name");
-            if ( clk=="okay" ) {
-                
-                tc = "test";
-                
-                var newForm = dynoForm("editpage",content);
-
-                alert(content);
-                newForm.submit();
-            }
-        });
-        $("#modalid").draggable();
-    }
-    
-    
+    // closeModal();
 }
 
 function setupSaveButton() {
@@ -1245,7 +1408,7 @@ function setupCustomCount() {
 }
 
 function toggleTabs() {
-    var hidestatus = $("#restoretabs");
+    var hidestatus = $("#toggletabs");
     if ( $("#roomtabs").hasClass("hidden") ) {
         $("#roomtabs").removeClass("hidden");
         if ( hidestatus ) hidestatus.html("Hide Tabs");
@@ -1262,10 +1425,11 @@ function strObject(o, level) {
   if ( typeof o !== "object") { return o + '\n'; }
   
   for (var p in o) {
-    out += p + ': ';
+    out += '  ' + p + ': ';
     if (typeof o[p] === "object") {
-        if ( level > 10 ) {
-            out+= ' [more beyond 10 levels...] \n';
+        if ( level > 6 ) {
+            out+= ' ...more beyond level 6 \n';
+            out+= JSON.stringify(o);
         } else {
             out += strObject(o[p], level+1);
         }
@@ -1291,8 +1455,10 @@ function fixTrack(tval) {
 // note that some sub-items can update the values of other subitems
 // this is exactly what happens in music tiles when you hit next and prev song
 function updateTile(aid, presult) {
+
     // do something for each tile item returned by ajax call
     var isclock = false;
+    
     $.each( presult, function( key, value ) {
         var targetid = '#a-'+aid+'-'+key;
 
@@ -1355,15 +1521,21 @@ function updateTile(aid, presult) {
             {
                 value = round(value, 0);
             }
-                if (oldvalue || value) {
-                    $(targetid).html(value);
-                }
+            // update the content 
+            if (oldvalue || value) {
+                $(targetid).html(value);
+                // if ( aid=="91" ) { alert("key= " + key + " changed value to: " + value); }
             }
+        }
     });
     
     if ( isclock ) {
         CoolClock.findAndCreateClocks();
     }
+    
+//    if ( aid=="1" && presult["skin"]!==undefined ) {
+//        console.log ( "debugging analog clock: " + strObject(presult) );
+//    }
 }
 
 function round(value, decimals) {
@@ -1374,14 +1546,15 @@ function round(value, decimals) {
 // it then calls the updateTile function to update each subitem in the tile
 function refreshTile(aid, bid, thetype, hubnum) {
     var ajaxcall = "doquery";
-    if ( bid.startsWith("h_") ) {
-        // ajaxcall = "queryhubitat";
-        bid = bid.substring(2);
-    }
+//    if ( bid.startsWith("h_") ) {
+//        // ajaxcall = "queryhubitat";
+//        bid = bid.substring(2);
+//    }
     $.post(returnURL, 
         {useajax: ajaxcall, id: bid, type: thetype, value: "none", attr: "none", hubnum: hubnum},
         function (presult, pstatus) {
-            if (pstatus==="success" && presult!==undefined ) {
+            if (pstatus==="success") {
+                // console.log( "presult from refreshTile: ", strObject(presult) );
                 updateTile(aid, presult);
             }
         }, "json"
@@ -1468,37 +1641,26 @@ function wsSocketCheck()
         
     }
 }
-function timerSetup(hubs) {
-    setupWebsocketUpdate();
-    setInterval(wsSocketCheck, 5000);
-    // loop through every hub
-    allHubs = [];
- 
-    $.each(hubs, function (hubnum, hub) {
+function setupTimer(timerval, timertype, hubnum) {
 
-        var hubType = hub.hubType;
-        var token = hub.hubAccess;
-        var timerval = 60000;
-        if ( hubType==="Hubitat" ) {
-            timerval = 5000;
-        }
-        // console.log("hub #" + hubnum + " timer = " + timerval + " hub = " + strObject(hub));
-
-        var updarray = ["all", timerval, hubnum, token];
+        // console.log("hub #" + hubnum + " timer = " + timerval);
+        var updarray = [timertype, timerval, hubnum];
         updarray.myMethod = function() {
 
             var that = this;
             var err;
 
             // skip if not in operation mode or if inside a modal dialog box
-            if ( priorOpmode !== "Operate" || modalStatus  || !token) { 
-                // console.log ("Timer Hub #" + that[2] + " skipped: opmode= " + priorOpmode + " modalStatus= " + modalStatus+" token= " + token);
+            if ( priorOpmode !== "Operate" || modalStatus ) { 
+                // console.log ("Timer Hub #" + that[2] + " skipped: opmode= " + priorOpmode + " modalStatus= " + modalStatus);
                 // repeat the method above indefinitely
-                this.jsTimer = setTimeout(function() {updarray.myMethod();}, this[1]);
+                that.jsTimer = setTimeout(function() {updarray.myMethod();}, that[1]);
                 return; 
             }
-            console.log("refresh everything from " + returnURL + " id: " + that[0] + " type: " + that[0] + " hubnum: " + that[2]);
+            //console.log("refresh everything from " + returnURL + " id: " + that[0] + " type: " + that[0] + " hubnum: " + that[2]);
             try {
+//                $.post(returnURL, 
+//                    {useajax: "doquery", id: that[0], type: that[0], value: "none", attr: "none", hubnum: that[2]},
               $.ajax({
                 type: "POST",
 		            url: returnURL,
@@ -1513,18 +1675,20 @@ function timerSetup(hubs) {
 		            success: 		    
                     function (presult, pstatus) {
                         if (pstatus==="success" && presult!==undefined ) {
-                            //console.log("Success polling hub #" + that[2] + ". Returned "+ Object.keys(presult).length+ " items: " + strObject(presult));
+                            
+//                            if ( that[1] > 20000 ) {
+//                                console.log("Success polling hub #" + that[2] + ". Returned "+ 
+//                                        Object.keys(presult).length+ " items");
+//                            }
                             // go through all tiles and update
                             try {
-                            $('div.panel div.thing').each(function() {
-                                var aid = $(this).attr("id");
-                                // skip the edit in place tile
-                                if ( aid.startsWith("t-") ) {
-                                    aid = aid.substring(2);
-                                    var tileid = $(this).attr("tile");
-                                    var bid = $(this).attr("bid");
-                                    
-                                    if ( bid!=="clockanalogxxx" ) {
+                                $('div.panel div.thing').each(function() {
+                                    var aid = $(this).attr("id");
+                                    // skip the edit in place tile
+                                    if ( aid.startsWith("t-") ) {
+                                        aid = aid.substring(2);
+                                        var tileid = $(this).attr("tile");
+
                                         var thevalue;
                                         try {
                                             thevalue = presult[tileid];
@@ -1532,16 +1696,15 @@ function timerSetup(hubs) {
                                             tileid = parseInt(tileid, 10);
                                             try {
                                                 thevalue = presult[tileid];
-                                            } catch (err) {}
+                                            } catch (err) { thevalue = null; }
                                         }
                                         // handle both direct values and bundled values
                                         if ( thevalue && thevalue.hasOwnProperty("value") ) {
                                             thevalue = thevalue.value;
                                         }
-                                        if ( thevalue && thevalue!==undefined ) { updateTile(aid,thevalue); }
+                                        if ( thevalue && typeof thevalue==="object" ) { updateTile(aid,thevalue); }
                                     }
-                                }
-                            });
+                                });
                             } catch (err) { console.error("Polling error", err.message); }
                         }
                     }
@@ -1561,6 +1724,85 @@ function timerSetup(hubs) {
     
 }
 
+// this is similar to the above function but operates only on tiles that
+// can be refreshed very frequently without a call back to a hub
+// this updates image and custom tiles every 5 seconds with whatever content is on server
+function setupFastTimer(timerval, timertype) {
+
+    var updarray = [timertype, timerval];
+    updarray.fastMethod = function() {
+
+        var that = this;
+        var err;
+
+        // skip if not in operation mode or if inside a modal dialog box
+        if ( priorOpmode !== "Operate" || modalStatus ) { 
+            // console.log ("Timer Hub #" + that[2] + " skipped: opmode= " + priorOpmode + " modalStatus= " + modalStatus);
+            // repeat the method above indefinitely
+            setTimeout(function() {updarray.fastMethod();}, this[1]);
+            return; 
+        }
+
+        try {
+            $.post(returnURL, 
+//                    {useajax: "doquery", id: that[0], type: that[0], value: "none", attr: "none", hubnum: that[2]},
+                {useajax: "doquery", id: that[0], type: that[0], value: "none", attr: "none", hubnum: -1},
+                function (presult, pstatus) {
+                    if (pstatus==="success" ) {
+
+//                        console.log("Success polling fast. Returned: " + Object.keys(presult).length+ " items ");
+//                        console.log( strObject(presult) );
+                            
+                        // go through all tiles and update
+                        try {
+                        $('div.panel div.thing').each(function() {
+                            var aid = $(this).attr("id");
+                            if ( aid.startsWith("t-") ) {
+                                aid = aid.substring(2);
+                                var tileid = $(this).attr("tile");
+                                tileid = parseInt(tileid, 10);
+                                
+                                // start by assuming we returned a thing or a value array
+                                var thevalue = presult;
+                                
+                                // now check if we have an array of things or values instead
+                                if ( typeof presult[tileid] !== "undefined" ) {
+
+                                    try {
+                                        thevalue = presult[tileid];
+                                    } catch (err) {
+                                        thevalue = null;
+                                    }
+                                }    
+                                
+                                // if this is a thing then grab the value element
+                                if ( thevalue && thevalue.hasOwnProperty("type") && thevalue.hasOwnProperty("value") ) {
+                                    thevalue = thevalue.value;
+                                }
+
+                                if ( thevalue ) { updateTile(aid,thevalue); }
+                                
+                            }
+                        });
+                        } catch (err) { console.error("Polling error", err.message); }
+                    }
+                }, "json"
+            );
+        } catch(err) {
+            console.error ("Polling error", err.message);
+        }
+
+        // repeat the method above indefinitely
+        setTimeout(function() {updarray.fastMethod();}, this[1]);
+    };
+
+    // wait before doing first one
+    if ( timerval >= 1000 ) {
+        setTimeout(function() {updarray.fastMethod();}, timerval);
+    }
+
+}
+
 function updateMode() {
     $('div.thing.mode-thing').each(function() {
         var otheraid = $(this).attr("id").substring(2);
@@ -1578,6 +1820,7 @@ function updateMode() {
 // that way we don't need to wait for the timers to kick in to update
 // the visual items that people will expect to see right away
 function updAll(trigger, aid, bid, thetype, hubnum, pvalue) {
+
     // update trigger tile first
     // alert("trigger= "+trigger+" aid= "+aid+" bid= "+bid+" type= "+thetype+" pvalue= "+strObject(pvalue));
     if ( trigger !== "slider") {
@@ -1591,7 +1834,7 @@ function updAll(trigger, aid, bid, thetype, hubnum, pvalue) {
     }
     
     // for music and lock tiles, wait few seconds and refresh again to get new info
-    if (thetype==="music" || thetype==="lock") {
+    if (thetype==="music") {
         setTimeout(function() {
             refreshTile(aid, bid, thetype, hubnum);
         }, 3000);
@@ -1789,57 +2032,129 @@ function setupPage(trigger) {
     });
     $("div.overlay > div").off("click.tileactions");
     $("div.overlay > div").on("click.tileactions", function(event) {
-       
+        //reset Hub Update due to quick websocket updates. 
         $.each(allHubs, function (hubnum, hub) {
             clearTimeout(hub.jsTimer);
             hub.jsTimer = setTimeout(function() {hub.myMethod();}, hub[1]);
         });
         var aid = $(this).attr("aid");
-        var theclass = $(this).attr("class");
+        var theattr = $(this).attr("class");
         var subid = $(this).attr("subid");
         
         // avoid doing click if the target was the title bar
-        // or if not in Operate mode; also skip sliders tied to subid === level
-        if ( aid===undefined || priorOpmode!=="Operate" || modalStatus ||
-             subid==="level" ||
-             ( $(this).attr("id") && $(this).attr("id").startsWith("s-") ) ) return;
+        // also skip sliders tied to subid === level or colorTemperature
+        if ( aid===undefined || // modalStatus || 
+             subid==="level" || subid==="colorTemperature" ||
+             ( $(this).attr("id") && $(this).attr("id").startsWith("s-") ) ) {
+            return;
+        }
         
         var tile = '#t-'+aid;
-        var bid = $(tile).attr("bid");
-        var bidupd = bid;
         var thetype = $(tile).attr("type");
-        var hubnum = $(tile).attr("hub");
-        var targetid = '#a-'+aid+'-'+subid;
+        var linktype = thetype;
+        var linkval = "";
+        var command = "";
         
-        // set the action differently for Hubitat
-        var ajaxcall = "doaction";
-//        if ( bid.startsWith("h_") ) {
-//            ajaxcall = "dohubitat";
-//        }
-
-        var thevalue;
-        // for switches and locks set the command to toggle
-        // for most things the behavior will be driven by the class value = swattr
-        if (subid==="switch" || subid==="lock" || (thetype==="door" && subid==="door") ) {
-            thevalue = "toggle";
-            console.log($(targetid).html());
-        // handle shm special case
-        } else if ( (thetype=="shm" || thetype=="custom") && subid=="state" )  {
-            thevalue = $(targetid).html();
-            if ( thevalue=="off" ) { thevalue = "stay"; }
-            else if ( thevalue=="stay") { thevalue = "away"; }
-            else { thevalue = "off"; }
-        } else if ( thetype=="custom" && subid=="post") {
-            thevalue = "";
-        } else {
-            thevalue = $(targetid).html();
-            if ( !thevalue && thetype=="thermostat") {
-                thevalue = $("#a-"+aid+"-temperature").html();
+        // handle special control type tiles that perform javascript actions
+        // if we are not in operate mode only do this if click is on operate
+        // this is the only type tile that cannot be customized
+        if ( thetype==="control" && (priorOpmode==="Operate" || subid==="operate") ) {
+            if ( $(this).hasClass("confirm") ) {
+                var pos = {top: 100, left: 100};
+                createModal("modalexec","Perform " + subid + " operation... Are you sure?", "body", true, pos, function(ui) {
+                    var clk = $(ui).attr("name");
+                    if ( clk==="okay" ) {
+                        execButton(subid);
+                    }
+                });
+            } else {
+                execButton(subid);
             }
+            return;
         }
 
-        // turn momentary items on or off temporarily
-        if (thetype==="momentary" || thetype==="piston") {
+        // ignore all other tiles if not in operate mode
+        if ( priorOpmode!=="Operate" ) {
+            return;
+        }
+
+        // get the targetid used to aim values at
+        var bid = $(tile).attr("bid");
+        var hubnum = $(tile).attr("hub");
+        var targetid;
+        if ( subid.endsWith("-up") || subid.endsWith("-dn") ) {
+            var slen = subid.length;
+            targetid = '#a-'+aid+'-'+subid.substring(0,slen-3);
+        } else {
+            targetid = '#a-'+aid+'-'+subid;
+        }
+
+        // all hubs now use the same doaction call name
+        var ajaxcall = "doaction";
+        var thevalue = $(targetid).html();
+        var presult = {};
+        
+        // moved switch toggle treatment to the groovy code to detect swattr
+        // moved the special case for SHM to the groovy code so it only impacts SHM tiles
+        // 
+        // special case of thermostat clicking on things without values
+        // send the temperature as the value - think we can remove this
+        if ( !thevalue && thetype=="thermostat" &&
+             ( subid.endsWith("-up") || subid.endsWith("-dn") ) ) {
+            thevalue = $("#a-"+aid+"-temperature").html();
+        }
+        
+        // handle music commands
+        if ( subid.startsWith("music-" ) ) {
+            thevalue = subid.substring(6);
+        }
+        
+        // check for companion sibling element for handling customizations
+        // this includes easy references for a URL or TEXT link
+        // using jQuery sibling feature and check for valid http string
+        // if found then switch the type to the linked type for calls
+        // and grab the proper hub number
+        var usertile = $(this).siblings(".user_hidden");
+        var userval = "";
+        if ( usertile && $(usertile).attr("command") ) {
+            command = $(usertile).attr("command");    // command type
+            userval = $(usertile).attr("value");      // raw user provided val
+            linkval = $(usertile).attr("linkval");    // urlencooded val
+            linktype = $(usertile).attr("linktype");  // type of tile linked to
+            
+            // handle redirects to a user provided web page
+            if ( ( command==="URL" || command==="TEXT" ) 
+                   && userval.startsWith("http") ) {
+                window.open(userval,'_blank');
+                return;
+                
+            // handle replacing text with user provided text that isn't a URL
+            // for this case there is nothing to do on the server so we just
+            // update the text on screen and return it to the log
+            } else if ( command==="TEXT" ) {
+                presult[subid] = userval;
+                console.log( "Clicked on custom TEXT tile with: "+ strObject(presult) );
+                
+                // just update this customized tile since clicking on text doesn't really do anything
+                updateTile(aid, presult);
+                return;
+            }
+            
+            // all the other command types are handled on the PHP server side
+            // this is enabled by the settings above for command, linkval, and linktype
+        } else {
+            linkval = "";
+            command = "";
+            linktype = thetype;
+        }
+        
+        // turn momentary and piston items on or off temporarily
+        // but only for the subid items that expect it
+        // and skip if this is a custom action since it could be anything
+        // also, for momentary buttons we don't do any tile updating
+        // other than visually pushing the button by changing the class for 1.5 seconds
+        console.log(ajaxcall + ": command= " + command + " bid= "+bid+" hub= " + hubnum + " type= " + thetype + " linktype= " + linktype + " subid= " + subid + " value= " + thevalue + " linkval= " + linkval + " attr="+theattr);
+        if ( command==="" && ( (thetype==="momentary" && subid==="momentary") || (thetype==="piston" && subid==="pistonName") ) ) {
             var tarclass = $(targetid).attr("class");
             var that = targetid;
             // define a class with method to reset momentary button
@@ -1850,10 +2165,12 @@ function setupPage(trigger) {
             };
             
             $.post(returnURL, 
-                {useajax: ajaxcall, id: bid, type: thetype, value: thevalue, attr: subid, subid: subid, hubnum: hubnum},
+                {useajax: ajaxcall, id: bid, type: thetype, value: thevalue, 
+                    attr: subid, subid: subid, hubnum: hubnum},
                 function(presult, pstatus) {
                     if (pstatus==="success" && presult!==undefined && presult!==false) {
-                        console.log( ajaxcall + " POST returned: "+ strObject(presult) );
+                        console.log( ajaxcall + " POST returned:\n"+ strObject(presult) );
+                        // console.log( ajaxcall + " POST returned: "+ JSON.stringify(presult) );
                         if (thetype==="piston") {
                             $(that).addClass("firing");
                             $(that).html("firing");
@@ -1861,7 +2178,7 @@ function setupPage(trigger) {
                             $(that).removeClass("on");
                             $(that).addClass("off");
                             $(that).html("off");
-                        } else {
+                        } else if ( $(that).hasClass("off") )  {
                             $(that).removeClass("off");
                             $(that).addClass("on");
                             $(that).html("on");
@@ -1869,29 +2186,31 @@ function setupPage(trigger) {
                         setTimeout(function(){classarray.myMethod();}, 1500);
                         updateMode();
                     }
-                });
-        } else if ( thetype==="video" ) {
-            if ( subid === "url" ) {
-                console.log("Replaying latest embedded video: " + thevalue);
-                $(targetid).html(thevalue);
-            } else {
-                console.log("Video actions require you to click on the video");
-            }
-        } else if ( thetype==="weather") {
-            console.log("Weather tiles have no actions...");
+                }, "json");
+                
+        // for clicking on the video link simply reload the video which forces a replay
+        } else if ( thetype==="video" && subid==="video" ) {
+            console.log("Replaying latest embedded video: " + thevalue);
+            $(targetid).html(thevalue);
+        
+        // for clicking on the frame link simply reload the frame
+        } else if ( thetype==="frame" && subid==="frame" ) {
+            console.log("Reloading the frame: " + thevalue);
+            $(targetid).html(thevalue);
+
         } else {
-            // alert("ajax= "+ajaxcall+" id= "+bid+" value= "+thevalue+" attr= "+subid+" subid= "+subid+" class="+theclass);
-            console.log(ajaxcall + ": id= "+bid+" hub= " + hubnum + " type= "+thetype+ " subid= " + subid + " value= "+thevalue+" class="+theclass);
+            // console.log(ajaxcall + ": command= " + command + " bid= "+bid+" hub= " + hubnum + " type= " + thetype + " linktype= " + linktype + " subid= " + subid + " value= " + thevalue + " linkval= " + linkval + " attr="+theattr);
             $.post(returnURL, 
-                   {useajax: ajaxcall, id: bid, type: thetype, value: thevalue, attr: theclass, subid: subid, hubnum: hubnum},
+                   {useajax: ajaxcall, id: bid, type: linktype, value: thevalue, 
+                    attr: theattr, subid: subid, hubnum: hubnum, command: command, linkval: linkval},
                    function (presult, pstatus) {
-                        if (pstatus==="success" ) {
-                            // alert(bid);
+                        if (pstatus==="success" && presult ) {
                             try {
                                 var keys = Object.keys(presult);
                                 if ( keys && keys.length) {
-                                    console.log( ajaxcall + " POST returned: "+ strObject(presult) );
-                                     updAll(subid,aid,bidupd,thetype,hubnum,presult);
+                                    console.log( ajaxcall + " POST returned:\n"+ strObject(presult) );
+                                    // console.log( ajaxcall + " POST returned: "+ JSON.stringify(presult) );
+                                    updAll(subid,aid,bid,thetype,hubnum,presult);
                                 } else {
                                     console.log( ajaxcall + " POST returned nothing to update (" + presult+"}");
                                 }

@@ -42,9 +42,45 @@ div.greetingopts div {
     margin-bottom: 10px;
 }
 div.greetingopts div.hubopt {
-    margin-top: 20px; margin-bottom: 20px;
+    margin-top: 0px;
+    margin-bottom: 0px;
     width: 1020px;
-    border-bottom: 2px solid black;
+    padding-top: 20px;
+    padding-bottom: 20px;
+    border: 2px solid black;
+    border-bottom: none;
+    background-color: #ccffff;
+}
+#newthingcount {
+    width: 1020px; height: 30px;
+    border: 2px solid black;
+    border-bottom: none;
+    background-color: #eeeeee;
+    padding-top: 5px;
+    padding-bottom: 5px;
+    font-weight: bold;
+    font-size: 20px;
+    margin-bottom: 0px;
+}
+
+#showdocs {
+    display: inline-block;
+    position: absolute;
+    top: 1px;
+    right: 80px;
+    width: 30px; height: 22px; padding-top: 8px;
+    border-radius: 50%;
+    background-color: rgba(140,140,140,0.5);
+    border: 1px solid rgba(50,50,50,0.5);
+    text-align: center; 
+    color: white;
+    cursor: pointer;
+}
+#showdocs a {
+    text-decoration: none;
+}
+#showdocs:hover {
+    filter: invert(1);
 }
 
 label.startupinp, input.indent {
@@ -58,7 +94,8 @@ label.highlight {
     color: #ffffee;
 }
 
-div.authhub {
+div.greetingopts div.authhub {
+    margin-top: 0px;
     border: 2px solid black;
     background-color: rgba(240, 240, 220, 1);
     width: 1020px;
@@ -390,7 +427,7 @@ div.returninfo a {
 }
 span.typeopt {
     font-weight: normal;    font-family: "Raleway", serif;    font-style: italic;
-    color: #666666;
+    color: #666666; margin-left: 5px;
 }
 div.processoptions {
     margin-left: 0px; margin-top: 0px;    
@@ -425,6 +462,15 @@ div.restoretabs, div.formbutton {
     margin-left: 2px; margin-right: 2px;
     font-size: 12pt;
 }
+div.formauto {
+    display: inline-block;
+    padding-top: 6px; padding-bottom: 6px;
+    padding-left: 2px; padding-right: 2px;
+    width: auto; height: auto;
+    margin-left: 10px; margin-right: 2px;
+    font-size: 12pt;
+}
+
 input.resetbutton, input.submitbutton {
     padding-right: 2px;
     padding-top: 8px;
@@ -470,13 +516,13 @@ div.modeoptions {
 }
 
 div.modalbox {
-    display: inline-block;
+    display: block;
     text-align: left;
     padding: 5px;
+    border-top: 2px solid rgba(0, 0, 0, 1);
     background-color: rgba(255, 255, 246, 1);
     color: rgba(0, 0, 0, 1);
     font-size: 12pt;
-    position: absolute; 
     z-index: 99999;
 }
 
@@ -491,15 +537,29 @@ div.modalbuttons {
     margin-top: 5px;
 }
 
-button.dialogbtn {
+button.dialogbtn, button.cm_button, button.disabled {
     background-color: #3a5795;
     display: inline;
     width: 100px; height: 36px; margin-left: 5px; margin-right: 5px;
-    cursor: pointer;    border: none;
-    color: #eeeeee;    text-align: center;    font-weight: normal;
-    border-bottom: 2px solid rgba(0, 0, 0, 0.8); 
-    border-right: 2px solid rgba(0, 0, 0, 0.8); 
+    cursor: pointer;
+    color: #eeeeee;
+    text-align: center;
+    font-weight: normal;
+    border-left: 2px solid #cccccc; 
+    border-top: 2px solid #cccccc; 
+    border-bottom: 2px solid black; 
+    border-right: 2px solid black; 
     font-size: 12pt;
+}
+button.dialogbtn:hover, button.cm_button:hover {
+    filter: invert(1);
+}
+button.disabled {
+    background-color: #cccccc;
+    cursor: default;
+}
+button.disabled:hover {
+    filter: invert(0);
 }
 
 input.editinp {
@@ -562,7 +622,7 @@ div.formbutton a {
     overflow: hidden;
 }
 
-#editheader {
+div.editheader {
     border-bottom: 2px solid rgba(255, 255, 255, 1);
     background-color: #000066;
     color:#ffffff;
@@ -589,17 +649,19 @@ div.formbutton a {
 .modalshow {
     display: block;
 }
-
-#wysiwyg {
+#wysiwyg, #wysiwyg2 {
     display: inline-block;
     margin-left: 5px;
 }
-
-#wysiwyg > div.editlink, #wysiwyg > div.dellink {
+#wysiwyg div.editlink, #wysiwyg div.dellink, #wysiwyg div.cmzlink {
+    display: none;
+}
+#wysiwyg2 div.editlink, #wysiwyg2 div.dellink, #wysiwyg2 div.cmzlink {
     display: none;
 }
 
-div.editlink, div.dellink, div.editpage, div.delpage, div.addpage {
+div.editlink, div.cmzlink, div.dellink, div.sortnum,
+div.editpage, div.delpage, div.addpage {
     border: 2px solid white; 
     color: rgba(255, 255, 255, 0.5);
     border-radius: 50%;
@@ -610,16 +672,23 @@ div.editlink, div.dellink, div.editpage, div.delpage, div.addpage {
     cursor: pointer;
 }
 div.editpage, div.editlink {
-    background-color: rgba(0, 102, 102, 0.5);
+    background-color: rgba(0, 102, 102, 0.6);
     left: 0px;
 }
 div.delpage, div.dellink {
-    background-color: rgba(255, 0, 0, 0.5);
+    background-color: rgba(255, 0, 0, 0.6);
     right: 0px;
 }
-div.editlink, div.dellink {
+div.cmzlink {
+    background-color: rgba(0, 0, 102, 0.6);
+    right: 0px;
+}
+div.editlink, div.dellink, div.cmzlink {
     top: 12px;
-    width: 32px; height: 32px;
+    width: 28px; height: 28px;
+}
+div.cmzlink {
+    left: 36px;
 }
 div.addpage {
     font-size: 14px;
@@ -628,6 +697,17 @@ div.addpage {
     width: 40px; height: 24px;
     background-color: rgba(0, 102, 102, 1);
     right: 2px;
+}
+div.sortnum {
+    top: 12px;
+    width: 28px;
+    height: 23px;
+    padding-top: 5px;
+    background-color: rgba(230, 240, 240, 1);
+    border: 2px solid black; 
+    color: black;
+    font-weight: bold;
+    left: 0px;
 }
 
 div.wholetile {
@@ -646,8 +726,6 @@ input[type="button"]#wholetile {
     display: inline-block;
     width: auto;  
     height: auto;
-    margin-left: 2px;
-    margin-right: 7px;
 }
 
 #tileEdit, #pickerWrapper {
@@ -665,12 +743,21 @@ input[type="button"]#wholetile {
     height: 18px;
 }
 
+#tileDisplay {
+    display: inline-block;
+    width: auto;  
+    height: auto;
+    margin-left: 2px;
+    margin-right: 2px;
+    float: left;
+}
+
 #editicon {
     display: inline;
-    margin: 0px 0px 5px 7px;
+    margin: 0px 5px 5px 5px;  /* top, right, bottom, left */
     float: left;
     width: 245px;
-    max-height: 450px;
+    max-height: 470px;
     overflow-x: hidden;
     background-color: rgba(170, 170, 170, 1);
 }
@@ -839,6 +926,17 @@ div.colorgroup label {
     display: block;
 }
 
+div.radiogroup {
+    display: block;
+    margin-top: 10px;
+}
+div.radiogroup label, div.radiogroup input {
+    color: white;
+    width: auto;
+    display: inline-block;
+    margin-left: 2px; margin-right: 3px;
+}
+
 #colorpicker .minicolors-swatch {
   top: 2px;
   left: 0px;
@@ -871,6 +969,10 @@ div.colorgroup label {
     display: inline-block;
     margin-right: 5px;
 }
+/*#alignIcon input, #alignIcon label {
+    display: inline-block;
+    margin-right: 5px;
+}*/
 #editReset {
     display: inline-block;
     padding-left: 10px;
@@ -908,6 +1010,24 @@ div#opmode {
 }
 
 /* mini colors */
+div.thing div.overlay.color {
+    position: absolute;
+    right: -2px;
+    top: 25px;
+    z-index: 999;
+}
+
+/* this makes cirles for color selections */
+div.overlay.color div.color {
+    position: absolute;
+    height: 32px;
+    width: 32px;
+    border-radius: 50%;
+    display: none;
+    cursor: pointer;
+    z-index: 9999;
+}
+
 div.overlay.color .minicolors-theme-default.minicolors {
     z-index: 999;
 }
@@ -968,6 +1088,11 @@ div.panel {
     background-repeat: no-repeat;
     background-size: cover;
 }
+
+div.panel div.thingname:hover {
+    filter: invert(1);
+}
+
 /* all things look like this */  
 /* the heights are set to auto for larger items like weather and thermostats */
 div.thing {
@@ -994,18 +1119,23 @@ div.thing.catalog-thing {
 }
 /* the name of the thing - must be after the above heights */
 /* added catalog-thing div.thingname to ensure catalog shows properly */
-div.thingname, div.catalog-thing div.thingname {
+div.thing div.thingname, div.catalog-thing div.thingname {
     background-color: rgba(0, 50, 100,1);
     font-size: 11pt;
     text-align: center;
     color: #ffffff;
     border-bottom: 2px solid rgba(0,0,0,1);
+    width: 100%;
     height: 30px;
     cursor: default;
 }
 div.thingname:hover {
     background-color: #5050a0; 
     color: #cccccc;
+}
+
+div.music-thing div.thingname.music {
+    width: 100%;
 }
 
 /* blank tiles styling */
@@ -1037,6 +1167,25 @@ div.blank.size.b1x2, div.blank.size.b2x2 {
 div.blank.size.h1x2, div.blank.size.h2x2 {
     height: 320px;
 }
+
+/* mode and ST shm and Hubitat hsm styles */
+div.thing.mode-thing, div.thing.shm-thing, div.thing.hsm-thing {
+    width: auto;
+    height: auto;
+}
+div.mode-thing.m1x1, div.mode-thing.m2x1, div.mode-thing.hm1x1, div.mode-thing.hm2x1 {
+    height: 147px;
+}
+div.mode-thing.m1x2, div.mode-thing.m2x2, div.mode-thing.hm1x2, div.mode-thing.hm2x2 {
+    height: 300px;
+}
+div.mode-thing.m1x1, div.mode-thing.m1x2, div.mode-thing.hm1x1, div.mode-thing.hm1x2 {
+    width: 120px;
+}
+div.mode-thing.m2x1, div.mode-thing.m2x2, div.mode-thing.hm2x1, div.mode-thing.hm2x2 {
+    width: 244px;
+}
+
 div.thing.blank-thing:hover {
     position: relative;
     box-shadow: 0px 0px 41px rgba(0, 0, 0, 0.50);
@@ -1054,10 +1203,6 @@ div.thing.clock-thing {
 div.thing.clock-thing.analog {
     background-color: white;
 }
-div.clock.weekday {
-    margin-top: 0px;
-    margin-bottom: 0px;
-}
 div.clock.time {
     font-size: 36pt;
     margin-top: 12px;
@@ -1074,12 +1219,44 @@ div.switch.colorTemperature, div.lock.checkInterval,
 div.lock.codeChanged, div.lock.lockCodes, div.lock.scanCodes,
 div.lock.codeReport, div.lock.maxCodes, div.lock.maxCodeLength,
 div.lock.minCodeLength, div.lock.codeLength,
-div.thingname.blank, div.thingname.clock,
+div.thingname.blank, div.thingname.clock, div.thingname.video,
 div.thingname.image, div.thingname.routine, div.overlay.healthStatus,
+div.thing.frame-thing div.overlay.status,
 div.valve.switch, div.valve.contact, div.valve.stopWatering, div.valve.log,
-div.clock.tzone, div.thingname.mode
+div.clock.tzone, div.thingname.mode, div.bulb.colorMode, div.light.colorMode,
+div.illuminance-thing .overlay.temperature 
 {
     display:none;
+}
+
+/* by default put digital stuff in analog clock as an overlay*/
+div.clock-thing.analog div.overlay {
+    position: absolute;
+    top: 0px;
+    left: 0px;
+}
+div.clock-thing div.clock.time,
+div.clock-thing div.clock.weekday,
+div.clock-thing div.clock.date,
+div.clock-thing div.clock.tzone {
+    display: block;
+    position: relative;
+}
+
+div.clock-thing.digital div.overlay.skin {
+    display: none;
+    position: absolute;
+}
+
+div.clock-thing.analog div.overlay.skin {
+    display: inline-block;
+    position: absolute;
+    top: -4px;
+    left: -4px;
+    border: none;
+}
+div.clock-thing div.overlay.fmt_date, div.clock-thing div.overlay.fmt_time {
+    display: none;
 }
 
 /* hide hue & sat & level for bulbs because we now have color pickers */
@@ -1103,12 +1280,19 @@ div.overlay.name {
     color: rgba(255, 255, 255, 0.01);
     width: auto;
 }
+div.config-thing div.overlay.name {
+    position: relative;
+    display: none;
+    color: rgba(255, 255, 255, 1);
+}
 
 /* sliders */
 .ui-slider-horizontal {
     height: 0.3em; 
 }
-
+div.thing div.overlay.level .ui-slider.slider-horizontal {
+    width: 100%;
+}
 
 /* battery display */
 div.overlay.battery div.battery {
@@ -1185,6 +1369,214 @@ div.overlay._onPhysical, div.overlay._offPhysical,
 div.overlay._startmotion, div.overlay._stopmotion, div.overlay._reset {
     display: none;
 }
+div.custom-thing {
+    height: auto;
+    width: 120px;
+}
 div.custom-thing div.post, div.custom-thing div.text {
     overflow-wrap: break-word;
+}
+div.video-thing div.thingname.video, 
+div.video.width, div.video.height,
+div.frame.width, div.frame.height {
+    display: none;
+}
+iframe body {
+    margin: 0px;
+}
+
+div.weather-thing div.overlay {
+    display: inline;
+}
+div.overlay.weatherIcon div.weather, div.overlay.forecastIcon div.weather {
+    background-position-y: 8px;
+    width: 80px;
+    height: 74px;
+    padding-top: 6px;
+    margin-left: 8px; margin-right: 8px;
+    color: rgba(0, 0, 0, 1);
+    background-size: 80px;
+    
+    /* hide the icons for now until we figure out new format */
+    display: none;
+}
+
+div.weather.forecastToday, div.weather.forecastTonight, div.weather.forecastTomorrow {
+    display: none;
+}
+
+/* default weather name and city to not show */
+div.weather-thing div.overlay.name, div.weather-thing div.overlay.city {
+    display: none;
+    position: relative;
+}
+/* weather styling */
+div.thing.weather-thing {
+    background-color: rgba(0,0,0,0.01);
+    width: 240px;
+    text-align: center;
+    height: auto;
+}
+div.thing div.thingname.weather {
+    width: 92%;
+    padding-left: 4%; 
+    padding-right: 4%;
+}
+div.overlay.temperature div.weather.temperature, div.overlay.feelsLike div.weather.feelsLike {
+    display: inline-block;
+    width: 118px;
+    background-color: #006666;
+    color: #ffffee;
+    border: 2px solid white;
+    cursor: default;
+    text-align: center;
+    height: 70px;
+    width: 70px;
+    padding: 4px 3px 0 3px;
+    margin: 10px;
+    border-radius: 50%;
+    font-size: 20px;
+    line-height: 55px;
+}
+div.weather.feelsLike::before {
+    content: "Like: ";
+    font-size: 8pt;
+}
+div.weather img {
+    margin-left: 15px;
+    margin-right: 15px;
+}
+div.weather.wind::before {
+    content: "Wind: ";
+}
+div.weather.wind::after {
+    content: " mph";
+}
+div.weather.humidity::before {
+    content: "Humidity: ";
+}
+div.weather.percentPrecip::before {
+    content: "Rain: ";
+}
+div.weather.humidity::after, div.weather.percentPrecip::after {
+    content: "%";
+}
+div.weather.illuminance::after {
+    content: " Lux";
+}
+div.weather.sunriseset {
+    margin-top: 10px;
+}
+div.weather.sunriseset, div.weather.humidity,
+div.weather.wind, div.weather.percentPrecip, div.weather.alert, div.weather.illuminance {
+    background-color: rgba(51, 51, 51, 1);
+    margin: 0px;
+}
+div.weather.timeZoneOffset, div.weather.alertKeys,
+div.weather.sunriseDate, div.weather.sunsetDate,
+div.weather.localSunrise, div.weather.localSunset,
+div.weather.ultravioletIndex, div.weather.lastUpdate {
+    display: none;
+}
+div.weather_icons {
+    margin-bottom: 10px;
+    margin-top: 10px;
+}
+div.weather.weatherIcon, div.weather.forecastIcon {
+    display: inline-block;
+}
+div.thing.control-thing {
+    width: 150px;
+    height: auto;
+    font-size: 24px;
+}
+
+/* make all control items look right */
+div.thing.control-thing div.control {
+    background-color: rgba(80, 110, 110, 1);
+    padding-top: 3px; padding-bottom: 3px;
+    cursor: pointer;
+}
+div.thing.control-thing div.thingname.control {
+    background-color: rgba(50, 50, 100, 1);
+    padding-top: 3px; padding-bottom: 0px;
+}
+
+div.control.name {
+    display: none;
+}
+div.thing.control-thing div.overlay:hover {
+    filter: invert(1);
+}
+
+div.thing.frame-thing div.frame.width, 
+div.thing.frame-thing div.frame.height {
+    display: none;
+}
+div.thing div.user_hidden {
+    display: none;
+}
+
+div.cm_group {
+    display: block;
+    margin-top: 10px;
+    margin-left: 5px;
+}
+#cm_linkfields {
+    width: 400px;
+}
+
+div.cm_preview {
+    width: auto;
+    height: auto;
+    background-color: black;
+    border-top: 3px solid #cccccc;
+    border-left: 3px solid #cccccc;
+    border-right: 3px solid #333333;
+    border-bottom: 3px solid #333333;
+}
+
+#cm_text {
+    width: 400px;
+}
+
+.readonly {
+    background-color: #cccccc;
+}
+
+#cm_dynoInfo {
+    width: 725px;
+    background-color: white;
+    border-top: 3px solid #cccccc;
+    border-left: 3px solid #cccccc;
+    border-right: 3px solid black;
+    border-bottom: 3px solid black;
+}
+
+div.cm_group label {
+    margin-right: 4px;
+}
+#cm_linkbid {
+    margin-bottom: 10px;
+    border: 1px solid black;
+    background-color: #cccccc;
+    padding: 4px;
+    width: 400px; height: 15px;
+}
+
+#cm_builtinfields option, #cm_userfield {
+    width: 300px;
+}
+
+table.cm_table {
+    border: none;
+    background-color: #b0b099;
+}
+
+table.cm_table td {
+    vertical-align: top;
+}
+
+#cm_subheader {
+    font-size: 20pt; color: #000000;
 }
