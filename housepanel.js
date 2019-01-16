@@ -1415,7 +1415,7 @@ function setupWebsocketUpdate()
 {
     if (wsSocket)
         return;   
-    wsSocket = new WebSocket("ws://192.168.10.207:1337");
+    wsSocket = new WebSocket("ws://192.168.10.63:1337");
     wsSocket.onopen = function(){
     }
     wsSocket.onmessage = function (event) {
