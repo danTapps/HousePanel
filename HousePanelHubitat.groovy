@@ -69,7 +69,6 @@ preferences {
         input (name: "cloudcalls", type: "bool", title: "Cloud Calls", defaultValue: false, required: true)
         paragraph "Enable this to use Pistons. You must have WebCore installed locally for this to work (Beta)."
         input (name: "usepistons", type: "bool", multiple: false, title: "Use Pistons?", required: false, defaultValue: false)
-        input (name: "dologging", type: "bool", multiple: false, title: "Do logging?", required: false, defaultValue: true)
     }
     section("Lights and Switches...") {
         input "myswitches", "capability.switch", multiple: true, required: false, title: "Switches"
@@ -103,6 +102,24 @@ preferences {
     input "mypower", "capability.powerMeter", multiple: true, required: false, title: "Power Meters"
         input "myothers", "capability.sensor", multiple: true, required: false, title: "Other and Virtual Sensors"
     }
+    section("Logging") {
+        input (
+            name: "configLoggingLevelIDE",
+            title: "IDE Live Logging Level:\nMessages with this level and higher will be logged to the IDE.",
+            type: "enum",
+            options: [
+                "0" : "None",
+                "1" : "Error",
+                "2" : "Warning",
+                "3" : "Info",
+                "4" : "Debug",
+                "5" : "Trace"
+            ],
+            defaultValue: "3",
+            displayDuringSetup: true,
+            required: false
+        )
+    }   
 }
 
 mappings {
@@ -137,19 +154,25 @@ def updated() {
 def initialize() {
     configureHub();
     state.usepistons = usepistons
-    state.dologging = dologging
     if ( state.usepistons ) {
         webCoRE_init()
     }
-    if ( state.dologging ) {
-        log.debug "Installed with settings: ${settings} "
-    }
+    logger("Installed with settings: ${settings} ", "debug")
+    state.loggingLevelIDE = (settings.configLoggingLevelIDE) ? settings.configLoggingLevelIDE.toInteger() : 3
+
+    runIn(2, "registerLightAndSwitches", [overwrite: true])
+    runIn(4, "registerMotionAndPresence", [overwrite: true])
+    runIn(6, "registerDoorAndContact", [overwrite: true])
+    runIn(8, "registerThermostat", [overwrite: true])
+    runIn(10, "registerWater", [overwrite: true])
+    runIn(12, "registerSensorandOptions", [overwrite: true])
+
 }
 
 def configureHub() {
     if ( ! state.accessToken ) {
         createAccessToken(); 
-    log.debug "Creating new accessToken ..."
+        logger("Creating new accessToken ...", "info")
     }
     
     // get the cloud and local access points
@@ -158,17 +181,17 @@ def configureHub() {
     if ( cloudcalls ) {
         hubip = "https://oauth.cloud.hubitat.com";
         endpt = "${hubip}/${hubUID}/apps/${app.id}/"
-        log.debug "Cloud installation was requested and is reflected in the hubip and endpt above"
+        logger("Cloud installation was requested and is reflected in the hubip and endpt above", "info")
     } else {
         hubip = location.hubs[0].getDataValue("localIP")
         endpt = "${hubip}/apps/api/${app.id}/"
     }
 
-    log.debug "Use this information on the Auth page of House Panel."
-    log.debug "Hubitat IP = ${hubip}"
-    log.debug "Hub ID = ${app.id}"
-    log.debug "accessToken = ${state.accessToken}"
-    log.debug "Hubitat endpt = ${endpt}"
+    logger("Use this information on the Auth page of House Panel.", "info")
+    logger("Hubitat IP = ${hubip}", "info")
+    logger("Hub ID = ${app.id}", "info")
+    logger("accessToken = ${state.accessToken}", "info")
+    logger("Hubitat endpt = ${endpt}", "info")
 
 }
 
@@ -190,6 +213,7 @@ def getMomentary(swid, item=null) {
     def resp = false
     item = item ? item : mymomentaries.find {it.id == swid }
     if ( item && item.hasCapability("Switch") ) {
+        
         resp = [name: item.displayName, momentary: item.currentValue("switch")]
     }
     return resp
@@ -246,9 +270,7 @@ def getThermostat(swid, item=null) {
     if ( item.hasCapability("Battery") ) {
         resp.put("battery", item.currentValue("battery"))
     }
-    if ( state.dologging ) {
-        log.debug "Thermostat response = ${resp}"
-    }
+    logger("Thermostat response = ${resp}", "debug")
     return resp
 }
 
@@ -362,9 +384,7 @@ def setOther(swid, cmd, attr, subid ) {
     
     if (item && subid.startsWith("_")) {
         subid = subid.substring(1)
-        if ( state.dologging ) {
-            log.debug "Activating other device " + item + " command: " + subid
-        }
+        logger("Activating other device " + item + " command: " + subid, "debug")
         resp = [:]
         if ( item.hasCommand(subid) ) {
             item."$subid"()
@@ -385,19 +405,18 @@ def getThing(things, swid, item=null) {
     def resp = item ? [:] : false
     if ( item ) {
         resp.put("name",item.displayName)
-        //log.debug "HHDEB ${item.displayName} ${item.supportedAttributes}"
-//          if (swid == "19") log.debug "HHDEB capabilities start"
+        logger("HHDEB ${item.displayName} ${item.supportedAttributes}", "trace")
+        if (swid == "19")
+            logger("HHDEB capabilities start", "trace")
             item.supportedAttributes?.each {attr ->
                     try {
                         def othername = attr.getName()
-//                      if (swid == "19") log.debug "HHDEB ---- ${othername}"
+                        if (swid == "19") logger("HHDEB ---- ${othername}", "trace")
                         def othervalue = item.currentValue(othername)
-//                      if (swid == "19") log.debug "HHDEB ---- ${othervalue}"
+                        if (swid == "19") logger("HHDEB ---- ${othervalue}", "trace")
                         resp.put(othername,othervalue)
                     } catch (ex) {
-                        if ( state.dologging ) {
-                            log.warn "Attempt to read attribute for ${swid} failed"
-                        }
+                        logger("Attempt to read attribute for ${swid} failed ${ex}", "error")
                     }               
             }
 /*            item.capabilities.each {cap ->
@@ -424,13 +443,15 @@ def getThing(things, swid, item=null) {
                                     "enrollResponse","poll","ping","configure","refresh"]
                     def comname = comm.getName()
                     def args = comm.getArguments()
-                    def arglen = args.size()
-                    // log.debug "Command for ${swid} = $comname with $arglen args = $args "
+                    def arglen = 0
+                    if (args != null)
+                        arglen = args.size()
+                    logger("Command for ${swid} = $comname with $arglen args = $args ", "debug")
                     if ( arglen==0 && ! reserved.contains(comname) ) {
                         resp.put( "_"+comname, comname )
                     }
                 } catch (ex) {
-                    // log.warn "Attempt to read command for ${swid} failed"
+                    logger("Attempt to read command for ${swid} failed ${ex}", "error")
                 }
             }
     }
@@ -441,46 +462,74 @@ def getThing(things, swid, item=null) {
 def getThings(resp, things, thingtype) {
 //    def resp = []
     def n  = things ? things.size() : 0
-    if ( state.dologging ) {
-        log.debug "Number of things of type ${thingtype} = ${n}"
-    }
+    logger("Number of things of type ${thingtype} = ${n}", "debug")
     things?.each {
-//      if (thingtype == "switchlevel")
-//      log.debug "HHDEB thing: ${it} ${it.id}"
+        if (thingtype == "switchlevel")
+            logger("HHDEB thing: ${it} ${it.id}", "trace")
         def val = getThing(things, it.id, it)
         resp << [name: it.displayName, id: it.id, value: val, type: thingtype]
     }
     return resp
 }
 
+def logStepAndIncrement(step)
+{
+    logger("HHDEB ${step}", "trace")
+    return step+1
+}
 // This retrieves and returns all things
 // used up front or whenever we need to re-read all things
 def getAllThings() {
 
     def resp = []
+    def run = -1
+    run = logStepAndIncrement(run)
     resp = getSwitches(resp)
+    run = logStepAndIncrement(run)
     resp = getDimmers(resp)
+    run = logStepAndIncrement(run)
     resp = getMomentaries(resp)
+    run = logStepAndIncrement(run)
     resp = getLights(resp)
+    run = logStepAndIncrement(run)
     resp = getBulbs(resp)
+    run = logStepAndIncrement(run)
     resp = getContacts(resp)
+    run = logStepAndIncrement(run)
     resp = getDoors(resp)
+    run = logStepAndIncrement(run)
     resp = getLocks(resp)
+    run = logStepAndIncrement(run)
     resp = getSensors(resp)
+    run = logStepAndIncrement(run)
     resp = getPresences(resp)
+    run = logStepAndIncrement(run)
     resp = getThermostats(resp)
+    run = logStepAndIncrement(run)
     resp = getTemperatures(resp)
+    run = logStepAndIncrement(run)
     resp = getIlluminances(resp)
+    run = logStepAndIncrement(run)
     resp = getValves(resp)
+    run = logStepAndIncrement(run)
     resp = getWaters(resp)
+    run = logStepAndIncrement(run)
     resp = getMusics(resp)
+    run = logStepAndIncrement(run)
     resp = getSmokes(resp)
+    run = logStepAndIncrement(run)
     resp = getModes(resp)
+    run = logStepAndIncrement(run)
     resp = getHsmStates(resp)
+    run = logStepAndIncrement(run)
     resp = getOthers(resp)
+    run = logStepAndIncrement(run)
     resp = getBlanks(resp)
+    run = logStepAndIncrement(run)
     resp = getImages(resp)
+    run = logStepAndIncrement(run)
     resp = getPowers(resp)
+    run = logStepAndIncrement(run)
 
     // optionally include pistons based on user option
     if (state.usepistons) {
@@ -492,9 +541,7 @@ def getAllThings() {
 // this returns just a single active mode, not the list of available modes
 // this is done so we can treat this like any other set of tiles
 def getModes(resp) {
-    if ( state.dologging ) {
-        log.debug "Getting 4 Hubitat mode tiles"
-    }
+    logger("Getting 4 Hubitat mode tiles", "debug")
     def val = getmyMode(0)
     resp << [name: "Mode hm1x1", id: "hm1x1", value: val, type: "mode"]
     resp << [name: "Mode hm1x2", id: "hm1x2", value: val, type: "mode"]
@@ -533,9 +580,7 @@ def getImages(resp) {
 
 def getPistons(resp) {
     def plist = webCoRE_list()
-    if ( state.dologging ) {
-        log.debug "Number of pistons = " + plist?.size() ?: 0
-    }
+    logger("Number of pistons = " + plist?.size() ?: 0, "debug")
     plist?.each {
         def val = getPiston(it.id, it)
         resp << [name: it.name, id: it.id, value: val, type: "piston"]
@@ -645,7 +690,7 @@ def getWeathers(resp) {
 
 def getOthers(resp) {
     def n  = myothers ? myothers.size() : 0
-    if ( n > 0 && state.dologging ) { log.debug "Number of selected other sensors = ${n}" }
+    if ( n > 0 ) { logger("Number of selected other sensors = ${n}", "debug") }
     myothers?.each {
         def thatid = it.id;
         def multivalue = getThing(myothers, thatid, it)
@@ -656,7 +701,7 @@ def getOthers(resp) {
 
 def getPowers(resp) {
     def n  = mypower ? mypower.size() : 0
-    if ( n > 0 && state.dologging ) { log.debug "Number of selected power sensors = ${n}" }
+    if ( n > 0 ) { logger("Number of selected power sensors = ${n}", "debug") }
     mypower?.each {
         def thatid = it.id;
         def multivalue = getThing(mypower, thatid, it)
@@ -712,9 +757,7 @@ def doAction() {
     def swattr = params.swattr
     def subid = params.subid
     def cmdresult = false
-    if ( state.dologging ) {
-        log.debug "doaction params: cmd = $cmd type = $swtype id = $swid subid = $subid"
-    }
+    logger("doaction params: cmd = $cmd type = $swtype id = $swid subid = $subid", "info")
 
     // get the type if auto is set
     if ( (swtype=="auto" || swtype=="none" || swtype=="") && swid ) {
@@ -787,14 +830,12 @@ def doAction() {
           cmdresult = setOther(swid, cmd, swattr, subid)
           break
     }
-    if ( state.dologging ) {
-        log.debug "HousePanel doaction: cmd = $cmd type = $swtype id = $swid subid = $subid cmdresult = $cmdresult"
-    }
+    logger("HousePanel doaction: cmd = $cmd type = $swtype id = $swid subid = $subid cmdresult = $cmdresult", "debug")
     return cmdresult
 }
 
 def doQuery() {
-//  log.debug "HHDEB -------- doQuery start ${params}"
+    logger("HHDEB -------- doQuery start ${params}", "trace")
     def swid = params.swid
     def swtype = params.swtype
     def cmdresult = false
@@ -979,7 +1020,7 @@ def setMode(swid, cmd, swattr) {
         newsw = allmodes[0].getName()
     }
     
-    log.debug "Mode changed from $themode to $newsw index = $idx "
+    logger("Mode changed from $themode to $newsw index = $idx ", "debug")
     location.setMode(newsw);
     resp =  [   name: swid, 
                 sitename: location.getName(),
@@ -1002,7 +1043,7 @@ def setHsmState(swid, cmd, swattr, subid){
             cmd = cmds[i]
             key = keys[i]
             sendLocationEvent(name: "hsmSetArm", value: cmd)
-            // log.debug "HSM arm set to ${key}"
+            logger("HSM arm set to ${key}", "debug")
         }
     }
     def resp = [name : "Hubitat Smart Monitor", state: key]
@@ -1028,9 +1069,7 @@ def setGenericLight(mythings, swid, cmd, swattr) {
     if (item ) {
     
         def newonoff = item.currentValue("switch")
-        if ( state.dologging ) {
-            log.debug "generic light cmd = $cmd swattr = $swattr"
-        }
+        logger("generic light cmd = $cmd swattr = $swattr", "debug")
         // bug fix for grabbing right swattr when long classes involved
         // note: sometime swattr has the command and other times it has the value
         //       just depends. This is a legacy issue when classes were the command
@@ -1215,9 +1254,9 @@ def setGenericLight(mythings, swid, cmd, swattr) {
             } else {
                 item.off()
                 // address Hubitat bug to set level zero
-                if ( item.hasCommand("setLevel") ) {
-                    item.setLevel(0)
-                }
+//                if ( item.hasCommand("setLevel") ) {
+//                    item.setLevel(0)
+//                }
             }
             skiponoff = true
             break               
@@ -1231,11 +1270,11 @@ def setGenericLight(mythings, swid, cmd, swattr) {
                 item.off()
                 
                 // address Hubitat bug to set level zero
-                if ( item.hasCommand("setLevel") ) {
-                    item.setLevel(0)
-                }
+//                if ( item.hasCommand("setLevel") ) {
+//                    item.setLevel(0)
+//                }
             }
-            item.poll()
+//            item?.poll()
         }
         
         resp = [switch: newonoff]
@@ -1298,9 +1337,7 @@ def setLock(swid, cmd, swattr) {
     def newsw
     def item  = mylocks.find {it.id == swid }
     
-    if ( state.dologging ) {
-        log.debug "Performing setLock command with cmd = ${cmd} and swattr = ${swattr}"
-    }
+    logger("Performing setLock command with cmd = ${cmd} and swattr = ${swattr}", "debug")
     if (item) {
         if (cmd=="toggle") {
             newsw = item.currentLock=="locked" ? "unlocked" : "locked"
@@ -1358,7 +1395,7 @@ def setThermostat(swid, curtemp, swattr, subid) {
     def cmd = curtemp
     def item  = mythermostats.find {it.id == swid }
     if (item) {
-//          log.debug "setThermostat attr = $swattr for id = $swid curtemp = $curtemp"
+          logger("setThermostat attr = $swattr for id = $swid curtemp = $curtemp", "debug")
         
           resp = getThermostat(swid, item)
           // switch (swattr) {
@@ -1526,7 +1563,7 @@ def setMusic(swid, cmd, swattr, subid) {
     def item  = mymusics.find {it.id == swid }
     if ((item == null) && (swattr == "music-tunein") & (cmd != null))
     {
-        log.debug "do special for momentary ${swattr} ${cmd}"
+        logger("do special for momentary ${swattr} ${cmd}", "trace")
         item = mymomentaries.find {it.id == swid } 
     }
     def newsw
@@ -1641,4 +1678,252 @@ public  webCoRE_list(mode)
     return p
 }
 public  webCoRE_handler(evt){switch(evt.value){case 'pistonList':List p=state.webCoRE?.pistons?:[];Map d=evt.jsonData?:[:];if(d.id&&d.pistons&&(d.pistons instanceof List)){p.removeAll{it.iid==d.id};p+=d.pistons.collect{[iid:d.id]+it}.sort{it.name};state.webCoRE = [updated:now(),pistons:p];};break;case 'pistonExecuted':def cbk=state.webCoRE?.cbk;if(cbk&&evt.jsonData)"$cbk"(evt.jsonData);break;}}
+
+def ignoreTheseAttributes() {
+    return [
+        'DeviceWatch-DeviceStatus', 'checkInterval', 'devTypeVer', 'dayPowerAvg', 'apiStatus', 'yearCost', 'yearUsage','monthUsage', 'monthEst', 'weekCost', 'todayUsage',
+        'maxCodeLength', 'maxCodes', 'readingUpdated', 'maxEnergyReading', 'monthCost', 'maxPowerReading', 'minPowerReading', 'monthCost', 'weekUsage', 'minEnergyReading',
+        'codeReport', 'scanCodes', 'verticalAccuracy', 'horizontalAccuracyMetric', 'altitudeMetric', 'latitude', 'distanceMetric', 'closestPlaceDistanceMetric',
+        'closestPlaceDistance', 'leavingPlace', 'currentPlace', 'codeChanged', 'codeLength', 'lockCodes', 'healthStatus', 'horizontalAccuracy', 'bearing', 'speedMetric',
+        'speed', 'verticalAccuracyMetric', 'altitude', 'indicatorStatus', 'todayCost', 'longitude', 'distance', 'previousPlace','closestPlace', 'places', 'minCodeLength',
+        'arrivingAtPlace', 'lastUpdatedDt', 'scheduleType', 'zoneStartDate', 'zoneElapsed', 'zoneDuration', 'watering', 'lastUpdated'
+    ]
+}
+
+/* runIn(2, "registerDevices", [overwrite: true])
+    runIn(4, "registerSensors", [overwrite: true])
+    runIn(6, "registerSwitches", [overwrite: true])
+*/   
+
+def registerLightAndSwitches() {
+    //This has to be done at startup because it takes too long for a normal command.
+    registerChangeHandler(myswitches, true)
+    registerChangeHandler(mydimmers, true)
+    registerChangeHandler(mymomentaries, true)
+    registerChangeHandler(mylights, true)
+    registerChangeHandler(mybulbs, true)
+}
+
+def registerMotionAndPresence() {
+    //This has to be done at startup because it takes too long for a normal command.
+    registerChangeHandler(mypresences)
+    registerChangeHandler(mysensors)
+}
+
+def registerDoorAndContact() {
+    //This has to be done at startup because it takes too long for a normal command.
+    registerChangeHandler(mycontacts)
+    registerChangeHandler(mydoors)
+    registerChangeHandler(mylocks)
+}
+def registerThermostat() {
+    //This has to be done at startup because it takes too long for a normal command.
+    registerChangeHandler(mythermostats)
+    registerChangeHandler(mytemperatures)
+    registerChangeHandler(myilluminances)
+}
+
+def registerWater() {
+    //This has to be done at startup because it takes too long for a normal command.
+    registerChangeHandler(mywaters)
+    registerChangeHandler(myvalves)
+}
+
+def registerSensorandOptions() {
+    //This has to be done at startup because it takes too long for a normal command.
+    registerChangeHandler(mymusics, true)
+    registerChangeHandler(mysmokes, true)
+    registerChangeHandler(mypower, true)
+    registerChangeHandler(myothers, true)
+}
+
+def registerDevices() {
+    //This has to be done at startup because it takes too long for a normal command.
+    logger("Registering (${settings?.fanList?.size() ?: 0}) Fans", "info")
+    registerChangeHandler(settings?.fanList)
+    logger("Registering (${settings?.deviceList?.size() ?: 0}) Other Devices", "info")
+    registerChangeHandler(settings?.deviceList)
+}
+
+def registerSensors() {
+    //This has to be done at startup because it takes too long for a normal command.
+    logger("Registering (${settings?.sensorList?.size() ?: 0}) Sensors", "info")
+    registerChangeHandler(settings?.sensorList)
+    logger("Registering (${settings?.speakerList?.size() ?: 0}) Speakers", "info")
+    registerChangeHandler(settings?.speakerList)
+}
+
+def registerSwitches() {
+    //This has to be done at startup because it takes too long for a normal command.
+    logger("Registering (${settings?.switchList?.size() ?: 0}) Switches", "info")
+    registerChangeHandler(settings?.switchList)
+    logger("Registering (${settings?.lightList?.size() ?: 0}) Lights", "info")
+    registerChangeHandler(settings?.lightList)
+    if(!isST()) {
+        logger("Registering (${settings?.shadesList?.size() ?: 0}) Window Shades", "info")
+        registerChangeHandler(settings?.shadesList)
+    }
+    logger("Registered (${getDeviceCnt()} Devices)", "info")
+}
+
+def registerChangeHandler(devices, showlog=false) {
+    devices?.each { device ->
+        List theAtts = device?.supportedAttributes?.collect { it?.name as String }?.unique()
+        if(showlog) { logger("atts: ${theAtts}", "info") }
+        theAtts?.each {att ->
+            if(!(ignoreTheseAttributes().contains(att))) {
+                if(settings?.noTemp && att == "temperature" && (device?.hasAttribute("contact") || device?.hasAttribute("water"))) {
+                    Boolean skipAtt = true
+                    if(settings?.sensorAllowTemp) {
+                        List aItems = settings?.sensorAllowTemp?.collect { it?.getId() as String } ?: []
+                        if(aItems?.contains(device?.id as String)) { skipAtt = false }
+                    }
+                    if(skipAtt) { return }
+                } 
+                subscribe(device, att, "changeHandler")
+                if(showlog) { logger("Registering ${device?.displayName}.${att}", "info") }
+            }
+        }
+    }
+}
+
+def changeHandler(evt) {
+    def sendItems = []
+    def sendNum = 1
+    def src = evt?.source
+    def deviceid = evt?.deviceId
+    def deviceName = evt?.displayName
+    def attr = evt?.name
+    def value = evt?.value
+    def dt = evt?.date
+    def sendEvt = true
+    
+    logger("changeHandler()", "trace")
+    switch(evt?.name) {
+        case "hsmStatus":
+            deviceid = "alarmSystemStatus_${location?.id}"
+            attr = "alarmSystemStatus"
+            sendItems?.push([evtSource: src, evtDeviceName: deviceName, evtDeviceId: deviceid, evtAttr: attr, evtValue: value, evtUnit: evt?.unit ?: "", evtDate: dt])
+            break
+        case "hsmAlert":
+            if(evt?.value == "intrusion") {
+                deviceid = "alarmSystemStatus_${location?.id}"
+                attr = "alarmSystemStatus"
+                value = "alarm_active"
+                sendItems?.push([evtSource: src, evtDeviceName: deviceName, evtDeviceId: deviceid, evtAttr: attr, evtValue: value, evtUnit: evt?.unit ?: "", evtDate: dt])
+            } else { sendEvt = false }
+            break
+        case "hsmRules":
+        case "hsmSetArm":
+            sendEvt = false
+            break
+        case "alarmSystemStatus":
+            deviceid = "alarmSystemStatus_${location?.id}"
+            sendItems?.push([evtSource: src, evtDeviceName: deviceName, evtDeviceId: deviceid, evtAttr: attr, evtValue: value, evtUnit: evt?.unit ?: "", evtDate: dt])
+            break
+        case "mode":
+            settings?.modeList?.each { id->
+                def md = getModeById(id)
+                if(md && md?.id) { sendItems?.push([evtSource: "MODE", evtDeviceName: "Mode - ${md?.name}", evtDeviceId: md?.id, evtAttr: "switch", evtValue: modeSwitchState(md?.name), evtUnit: "", evtDate: dt]) }
+            }
+            break
+        case "routineExecuted":
+            settings?.routineList?.each { id->
+                def rt = getRoutineById(id)
+                if(rt && rt?.id) {
+                    sendItems?.push([evtSource: "ROUTINE", evtDeviceName: "Routine - ${rt?.label}", evtDeviceId: rt?.id, evtAttr: "switch", evtValue: "off", evtUnit: "", evtDate: dt])
+                }
+            }
+            break
+        default:
+            sendItems?.push([evtSource: src, evtDeviceName: deviceName, evtDeviceId: deviceid, evtAttr: attr, evtValue: value, evtUnit: evt?.unit ?: "", evtDate: dt])
+            break
+    }
+
+    state.directIP = "192.168.10.63"
+    state.directPort = "19234"
+    settings.showLogs = true
+    sendEvt = true
+    if (sendEvt && state?.directIP != "" && sendItems?.size()) {
+        //Send Using the Direct Mechanism
+        sendItems?.each { send->
+            if(settings?.showLogs) {
+                String unitStr = ""
+                switch(send?.evtAttr as String) {
+                    case "temperature":
+                        unitStr = "\u00b0${send?.evtUnit}"
+                        break
+                    case "humidity":
+                    case "level":
+                    case "battery":
+                        unitStr = "%"
+                        break
+                    case "power":
+                        unitStr = "W"
+                        break
+                    case "illuminance":
+                        unitStr = " Lux"
+                        break
+                    default:
+                        unitStr = "${send?.evtUnit}"
+                        break
+                }
+                logger("Sending${" ${send?.evtSource}" ?: ""} Event (${send?.evtDeviceName}(${send?.evtDeviceId}) | ${send?.evtAttr.toUpperCase()}: ${send?.evtValue}${unitStr}) to Websocket at (${state?.directIP}:${state?.directPort})", "trace")
+            }
+            def params = [
+                method: "POST",
+                path: "/",
+                headers: [
+                    HOST: "${state?.directIP}:${state?.directPort}",
+                    'Content-Type': 'application/json'
+                ],
+                body: [
+                    change_name: send?.evtDeviceName,
+                    change_device: send?.evtDeviceId,
+                    change_attribute: send?.evtAttr,
+                    change_value: send?.evtValue,
+                    change_date: send?.evtDate
+                ]
+            ]
+            // def result = new physicalgraph.device.HubAction(params)
+            def result = new hubitat.device.HubAction(params)
+            sendHubCommand(result)
+        }
+    }
+}
+
+/**
+ *  logger()
+ *
+ *  Wrapper function for all logging.
+ **/
+private logger(msg, level = "debug") {
+
+    switch(level) {
+        case "error":
+            if (state.loggingLevelIDE >= 1) log.error msg
+            break
+
+        case "warn":
+            if (state.loggingLevelIDE >= 2) log.warn msg
+            break
+
+        case "info":
+            if (state.loggingLevelIDE >= 3) log.info msg
+            break
+
+        case "debug":
+            if (state.loggingLevelIDE >= 4) log.debug msg
+            break
+
+        case "trace":
+            if (state.loggingLevelIDE >= 5) log.trace msg
+            break
+
+        default:
+            log.debug msg
+            break
+    }
+}
+
 
