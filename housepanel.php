@@ -195,46 +195,10 @@ define('DEBUG6', false); // debug misc
 define('DEBUG7', false); // debug misc
 define('DEBUG8', false); // debug custom development
 
-define("DONATE", false);  // turn on or off the donate button
+define("DONATE", true);  // turn on or off the donate button
 
 // set error reporting to just show fatal errors
 error_reporting(E_ERROR);
-
-//opml parser for TuneIn support
-
-function xmlToArray(SimpleXMLElement $xml)
-{
-    $parser = function (SimpleXMLElement $xml, array $collection = []) use (&$parser) {
-        $nodes = $xml->children();
-        $attributes = $xml->attributes();
-
-        if (0 !== count($attributes)) {
-            foreach ($attributes as $attrName => $attrValue) {
-                $collection['attributes'][$attrName] = strval($attrValue);
-            }
-        }
-
-        if (0 === $nodes->count()) {
-            $collection['value'] = strval($xml);
-            return $collection;
-        }
-
-        foreach ($nodes as $nodeName => $nodeValue) {
-            if (count($nodeValue->xpath('../' . $nodeName)) < 2) {
-                $collection[$nodeName] = $parser($nodeValue);
-                continue;
-            }
-
-            $collection[$nodeName][] = $parser($nodeValue);
-        }
-
-        return $collection;
-    };
-
-    return [
-        $xml->getName() => $parser($xml)
-    ];
-}
 
 // header and footer
 function htmlHeader($skin="skin-housepanel") {
@@ -352,14 +316,7 @@ function curl_call($host, $headertype=FALSE, $nvpstr=FALSE, $calltype="GET")
         if ($calltype!="GET") { curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $calltype); }
         if ($nvpstr) { curl_setopt($ch, CURLOPT_POSTFIELDS, $nvpstr); }
     }
-	/*error_log("----- curl");
-	error_log("| CURLOPT_URL " . $host);
-	error_log("| CURLOPT_HTTPHEADER " . print_r($headertype, true));
-	error_log("| calltype " . $calltype);
-	if ($nvpstr)
-		error_log("| CURLOPT_POSTFIELDS " . print_r($nvpstr, true));
-	
-	error_log("----- end");*/
+
 	//getting response from server
     $response = curl_exec($ch);
     
@@ -630,8 +587,7 @@ function getAuthPage($returl, $hpcode, $hubset=null, $newthings=null) {
             $kiosk = false;
             $rewrite = true;
         }
-	if (isset($_GET['kiosk']))
-		$kiosk = $_GET['kiosk'];
+        
         if ( $kiosk===true || $kiosk === "true" || $kiosk==="yes" || $kiosk==="1" ) {
             $kiosk = true;
         } else {
@@ -1042,7 +998,7 @@ function getAllThings($reset = false) {
     $tz = $configoptions["timezone"];
     date_default_timezone_set($tz);
     
-    if ( !$reset && isset($_SESSION["allthings"]) && !isset($_GET["redraw"])  ) {
+    if ( !$reset && isset($_SESSION["allthings"]) ) {
         $allthings = $_SESSION["allthings"];
         $insession = true;
     } else {
@@ -1149,31 +1105,10 @@ function getAllThings($reset = false) {
         for ($i=1; $i<= $customcnt; $i++ ) {
             $customid = "custom_" . strval($i);
             $customname = "Custom " . strval($i);
-            
-            if (array_key_exists($customid, $options) ) {
-                $lines = $options[$customid];
-                if ( !is_array($lines[0]) ) {
-                    $lines = array($lines);
-                }
-            } else {
-                $lines = array(array("TEXT", "Not Configured", "text"));
-            }
-            error_log($customid . ' '. print_r($lines, true));
-            $custom_val = getCustomTile($customname, $lines, $options, $allthings);
-            error_log($customid . ' '. print_r($custom_val, true));
-            $devId = isset($custom_val["hubdevid"]) ? $custom_val["hubdevid"] : $customid;
-            $type = $custom_val["type"];
-            if (isset($custom_val["hubdevid"])) unset($custom_val["hubdevid"]);
-            if (isset($custom_val["type"])) 
-            {
-                if ($custom_val["type"] === "radiobtn")
-                    $custom_val["radiobtn"] = "off";
-                unset($custom_val["type"]);
-            }
-            error_log($customid . ' '. print_r($custom_val, true));
-
-            $allthings["custom|$customid"] = array("id" => $devId, "name" => $custom_val["name"], 
-                "hubnum" => 0, "hubtype" => $hubs[0]["hubType"], "type" => $type,
+            $custom_val = array("name"=> $customname);
+            // $custom_val = getCustomTile($custom_val, $customid, $options, $allthings);
+            $allthings["custom|$customid"] = array("id" => $customid, "name" => $custom_val["name"], 
+                "hubnum" => -1, "hubtype" => "None", "type" => "custom",
                 "value" => $custom_val);
         }
         
@@ -1247,13 +1182,7 @@ function getCustomTile($custom_val, $customid, $options, $allthings=false) {
                 // this adds a new field for the URL or LINK information
                 // in a tag called user_$subid where $subid is the requested field
                 // web call results and linked values are stored in the subid field
-                if ( $calltype==="NAME" )
-            		$custom_val["name"] = $posturl;
-        	else if ( $calltype==="TYPE" )
-            		$custom_val["type"] = $posturl;
-        	else if ( $calltype==="HUBDEVID" )
-            		$custom_val["hubdevid"] = $posturl;
-        	else if ( $content && substr(strtolower($content),0,4)==="http" &&
+                if ( $content && substr(strtolower($content),0,4)==="http" &&
                      ($calltype==="PUT" || $calltype==="GET" || $calltype==="POST")  )
                 {
                     $custom_val["user_" . $subid] = "::" . $calltype . "::" . $posturl;
@@ -1423,11 +1352,7 @@ function makeThing($idx, $i, $kindex, $thesensor, $panelname, $postop=0, $poslef
     $postop= intval($postop);
     $posleft = intval($posleft);
     $zindex = intval($zindex);;
-
-    if ($thingname==="Weather")
-    {
-    	$thingtype="weather";
-    }
+    
     if ( $wysiwyg ) {
         $idtag = $wysiwyg;
     } else {
@@ -1469,8 +1394,8 @@ function makeThing($idx, $i, $kindex, $thesensor, $panelname, $postop=0, $poslef
         $tc.= putElement($kindex, $i, 0, $thingtype, $thingname, "name");
         $tc.= putElement($kindex, $i, 1, $thingtype, $thingvalue["city"], "city");
         $tc.= "<div class=\"weather_temps\">";
-        $tc.= putElement($kindex, $i, 2, $thingtype, $thingvalue["temperature"] . "&deg;", "temperature");
-//        $tc.= putElement($kindex, $i, 3, $thingtype, $thingvalue["feelsLike"] . "&deg;", "feelsLike");
+        $tc.= putElement($kindex, $i, 2, $thingtype, $thingvalue["temperature"], "temperature");
+        $tc.= putElement($kindex, $i, 3, $thingtype, $thingvalue["feelsLike"], "feelsLike");
         $tc.= "</div>";
         $tc.= "<div class=\"weather_icons\">";
         $wiconstr = $thingvalue["weatherIcon"];
@@ -1481,42 +1406,24 @@ function makeThing($idx, $i, $kindex, $thesensor, $panelname, $postop=0, $poslef
         if (substr($ficonstr,0,3) === "nt_") {
             $ficonstr = substr($ficonstr,3);
         }
-        $tc.= putElement($kindex, $i, 4, $thingtype, $wiconstr, "visualWithText");
+        $tc.= putElement($kindex, $i, 4, $thingtype, $wiconstr, "weatherIcon");
+        $tc.= putElement($kindex, $i, 5, $thingtype, $ficonstr, "forecastIcon");
         $tc.= "</div>";
-        $tc.= putElement($kindex, $i, 5, $thingtype, "Sunrise: " . $thingvalue["localSunrise"] . " Sunset: " . $thingvalue["localSunset"], "sunriseset");
-        $j = 7;
+        $tc.= putElement($kindex, $i, 7, $thingtype, "Sunrise: " . $thingvalue["localSunrise"], "localSunrise");
+        $tc.= putElement($kindex, $i, 8, $thingtype, "Sunset: " . $thingvalue["localSunset"], "localSunset");
+        $tc.= putElement($kindex, $i, 6, $thingtype, "Sunrise: " . $thingvalue["localSunrise"] . " Sunset: " . $thingvalue["localSunset"], "sunriseset");
+        $j = 9;
         foreach($thingvalue as $tkey => $tval) {
             if ($tkey!=="temperature" &&
                 $tkey!=="feelsLike" &&
-                $tkey!=="city" &&
                 $tkey!=="weather" &&
                 $tkey!=="weatherIcon" &&
                 $tkey!=="forecastIcon" &&
                 $tkey!=="alertKeys" &&
                 $tkey!=="localSunrise" &&
-                $tkey!=="localSunset" &&
-                $tkey!=="visualWithText" &&
-                $tkey!=="visualDayPlus1WithText" &&
-                $tkey!=="cCf" &&
-                $tkey!=="cloud" &&
-                $tkey!=="condition_code" 
-		&& $tkey!=="condition_icon"
-                && $tkey!=="condition_icon_url"
-                && $tkey!=="condition_text"
-                && $tkey!=="country"
-                && $tkey!=="feelslike_c"
-                && $tkey!=="feelslike_f"
-                && $tkey!==""
-                && $tkey!==""
-                && $tkey!==""
-                && $tkey!==""
-                && $tkey!==""
-                && $tkey!==""
-                && $tkey!==""
-
-		) 
+                $tkey!=="localSunset" ) 
             {
-//                $tc.= putElement($kindex, $i, $j, $thingtype, $tval, $tkey);
+                $tc.= putElement($kindex, $i, $j, $thingtype, $tval, $tkey);
                 $j++;
             }
         }
@@ -2368,6 +2275,7 @@ function writeOptions($options) {
     $options["time"] = HPVERSION . " @ " . strval(time());
 //    $_SESSION["hmoptions"] = $options;
     $f = fopen("hmoptions.cfg","wb");
+//pretty format for options file, was easier for me....
     $str =  json_encode($options, JSON_PRETTY_PRINT);
     fwrite($f, cleanupStr($str));
     fflush($f);
@@ -2460,7 +2368,7 @@ function refactorOptions($allthings) {
 // new routine that renumbers all the things in your options file from 1
 // NOTE: this also affects the custom tile settings
 //       refactor now also modifies customtiles.css by reading and writing it
-    return;
+
     // load in custom css strings
     $customcss = readCustomCss();
     $updatecss = false;
@@ -2509,8 +2417,8 @@ function refactorOptions($allthings) {
 
 //  use the commented code below if you want to preserve any user movements
 //  otherwise a refactor call resets all tiles to their baseeline position  
-                  $options["things"][$room][$key] = array($cnt,$postop,$posleft,$zindex,"");
-//                    $options["things"][$room][$key] = array($cnt,0,0,1,$customname);
+//                  $options["things"][$room][$key] = array($cnt,$postop,$posleft,$zindex,"");
+                    $options["things"][$room][$key] = array($cnt,0,0,1,$customname);
                 }
             }
         }
@@ -2640,7 +2548,7 @@ function getTypes() {
                         "motion", "lock", "thermostat", "temperature", "music", "valve",
                         "door", "illuminance", "smoke", "water",
                         "weather", "presence", "mode", "shm", "hsm", "piston", "other",
-                        "clock","blank","image","frame","video","custom", "power", "radiobtn");
+                        "clock","blank","image","frame","video","custom","control", "power");
     return $thingtypes;
 }
 
@@ -3998,8 +3906,7 @@ function is_ssl() {
                     echo $nothing;
                 }
                 break;
-	    case "playtuneid":
-        	break;
+        
             case "doquery":
             case "queryhubitat":
                 if ( $access_token && $endpt ) {
@@ -4029,18 +3936,7 @@ function is_ssl() {
             case "pageorder":
                 echo setOrder($endpt, $access_token, $swid, $swtype, $swval, $swattr);
                 break;
-            case "tuneinlist":
-		$opmlFile = new SimpleXMLElement("http://opml.radiotime.com/Browse.ashx?c=local",null,true);
-		$data_array = xmlToArray($opmlFile);
-		foreach ($data_array['opml']['body']['outline'][1]['outline'] as  $arr)
-		{
-		        //print_r($arr);
-                //$stations[] = array("station" => $arr['attributes']['text'], "url" => $arr['attributes']['URL']);
-                $stations[] = array("station" => $arr['attributes']['text'], "url" => str_replace('s', '',$arr['attributes']['preset_id']));
-
-		}
-		echo json_encode($stations);
- 		break;
+                
             // implement free form drag drap capability
             case "dragdrop":
                 echo setPosition($endpt, $access_token, $swid, $swtype, $swval, $swattr);
@@ -4403,8 +4299,6 @@ function is_ssl() {
             
             // get kiosk mode
             $kiosk = $configoptions["kiosk"];
-	    if (isset($_GET['kiosk']))
-		$kiosk = $_GET['kiosk'];
             $kioskmode = ($kiosk===true || strtolower($kiosk)==="yes" || 
                           $kiosk==="true" || intval($kiosk)===1 );
 

@@ -5,7 +5,7 @@ var priorOpmode = "Operate";
 var returnURL = "housepanel.php";
 var dragZindex = 1;
 var pagename = "main";
-var mySwitchTimeout;
+
 var wsSocket = null;
 // set this global variable to true to disable actions
 // I use this for testing the look and feel on a public hosting location
@@ -13,7 +13,7 @@ var wsSocket = null;
 // end-users are welcome to use this but it is intended for development only
 // use the timers options to turn off polling
 var disablepub = false;
-var disabletimers = false;
+
 // smart things timer once a minute
 var st_timer = 60000;
 
@@ -32,26 +32,6 @@ Number.prototype.pad = function(size) {
     var s = String(this);
     while (s.length < (size || 2)) {s = "0" + s;}
     return s;
-}
-
-function clearMainTimeout()
-{
-  if (mySwitchTimeout != null)
-  {
-    clearTimeout(mySwitchTimeout);
-  }
-  mySwitchTimeout = null;
-}
-
-function startMainTimeout()
-{
-  if (mySwitchTimeout== null)
- 	  mySwitchTimeout = setTimeout(function(){ 
-    try {
-      $("#ui-id-1").click();
-      mySwitchTimeout = null;
-    } catch (e) {}
-  }, 30000);
 }
 
 function setCookie(cname, cvalue, exdays) {
@@ -1483,7 +1463,7 @@ function updateTile(aid, presult) {
                 value = fixTrack(value);
             }
             // handle weather icons
-            else if ( key==="weatherIcon" || key==="forecastIcon" || key==="visualWithText") {
+            else if ( key==="weatherIcon" || key==="forecastIcon") {
                 if ( value.substring(0,3) === "nt_") {
                     value = value.substring(3);
                 }
@@ -1517,10 +1497,7 @@ function updateTile(aid, presult) {
                     $(targetid).addClass(value);
                 
             }
-            else if ( key === "temperature" )
-            {
-                value = round(value, 0);
-            }
+
             // update the content 
             if (oldvalue || value) {
                 $(targetid).html(value);
@@ -1536,10 +1513,6 @@ function updateTile(aid, presult) {
 //    if ( aid=="1" && presult["skin"]!==undefined ) {
 //        console.log ( "debugging analog clock: " + strObject(presult) );
 //    }
-}
-
-function round(value, decimals) {
-  return Number(Math.round(value+'e'+decimals)+'e-'+decimals);
 }
 
 // this differs from updateTile by calling ST to get the latest data first
@@ -1567,8 +1540,6 @@ function setupTabclick() {
     $("a.ui-tabs-anchor").click(function() {
         // save this tab for default next time
         var defaultTab = $(this).attr("id");
-        clearMainTimeout();
-        startMainTimeout();
         if ( defaultTab ) {
             setCookie( 'defaultTab', defaultTab, 30 );
         }
@@ -1654,13 +1625,17 @@ function setupTimer(timerval, timertype, hubnum) {
             if ( priorOpmode !== "Operate" || modalStatus ) { 
                 // console.log ("Timer Hub #" + that[2] + " skipped: opmode= " + priorOpmode + " modalStatus= " + modalStatus);
                 // repeat the method above indefinitely
+                // Save the background update time to be able to cancel it in case a button was pressed. 
+                // This provides a better UI experience with Websockets as you might get a "wrong" status with the background update first
                 that.jsTimer = setTimeout(function() {updarray.myMethod();}, that[1]);
                 return; 
             }
-            //console.log("refresh everything from " + returnURL + " id: " + that[0] + " type: " + that[0] + " hubnum: " + that[2]);
+
             try {
 //                $.post(returnURL, 
 //                    {useajax: "doquery", id: that[0], type: that[0], value: "none", attr: "none", hubnum: that[2]},
+// changed this to an .ajax call to be able to provide a timeout
+// I was dealing with some lonmg running update requests (due to custom device handlers wrong implementation of attributes on hubitat) and the updates started to queue              
               $.ajax({
                 type: "POST",
 		            url: returnURL,
@@ -1714,13 +1689,22 @@ function setupTimer(timerval, timertype, hubnum) {
             }
 
             // repeat the method above indefinitely
-            this.jsTimer = setTimeout(function() {updarray.myMethod();}, this[1]);
+            // Save the background update time to be able to cancel it in case a button was pressed. 
+            // This provides a better UI experience with Websockets as you might get a "wrong" status with the background update first
+
+            that.jsTimer = setTimeout(function() {updarray.myMethod();}, that[1]);
         };
+
         // wait before doing first one
-        updarray.jsTimer = setTimeout(function() {updarray.myMethod();}, timerval);
+        if ( timerval && timerval >= 1000 ) {
+          // Save the background update time to be able to cancel it in case a button was pressed. 
+          // This provides a better UI experience with Websockets as you might get a "wrong" status with the background update first
+          updarray.jsTimer = setTimeout(function() {updarray.myMethod();}, timerval);
+        }
+        //No remember all of this for websocket checks
         allHubs.push(updarray);
         
-    });
+//    });
     
 }
 
@@ -1916,123 +1900,12 @@ function updAll(trigger, aid, bid, thetype, hubnum, pvalue) {
     
 }
 
-function tuneInList(str_type, thingindex, thingclass, hubnum, htmlcontent)
-{
-    // save the sheet upon entry for cancel handling
-    savedSheet = document.getElementById('customtiles').sheet;
-    var dialog_html = "<div id='tileDialog' class='tileDialog' str_type='" +
-                      str_type + "' thingindex='" + thingindex +"' >";
-
-    // header
-        dialog_html += "<div id='editheader'>Select TuneIn #" + thingindex +
-                   " of Type: " + str_type + " From hub #" + hubnum + "</div>";
-
-
-
-    var jqxhr = null;
-//    var htmlcontent = "<div style=\"overflow-x:auto;\"><table><tr><th>Station</th></tr>";
-    var htmlcontent = "<div class=radiopanel>"
-    jqxhr = $.post("housepanel.php",
-            {useajax: "tuneinlist", tile: thingindex, attr: ''},
-            function (presult, pstatus) {
-                if (pstatus==="success" ) {
-                    var stations = JSON.parse(presult);
-                    for (var i = 0; i < stations.length; i++)
-                    {
-//                      htmlcontent += "<tr><td>"+stations[i]['station']+"</td></tr>";
-                        htmlcontent += "<div class=radio url=\""+stations[i]['url']+"\">"+stations[i]['station']+"</div>";
-                    }
-                }
-            }
-        );
-    dialog_html += "<div id='editInfo' class='editInfo'></div>";
-    dialog_html += "<div id='subsection'></div>";
-
-    // * DIALOG_END *
-    dialog_html += "</div>";
-
-    // create a function to display the tile
-    var dodisplay = function() {
-        var pos = {top: 10, left: 20};
-        createModal( dialog_html, "body", true, pos,
-            // function invoked upon leaving the dialog
-            function(ui, content) {
-                var clk = $(ui).attr("name");
-                // alert("clk = "+clk);
-                if ( clk==="okay" ) {
-                } else if ( clk==="cancel" ) {
-                }
-                tileCount = 0;
-            },
-            // function invoked upon starting the dialog
-            function(hook, content) {
-                $("#modalid").draggable();
-            }
-        );
-    };
-
-    if ( jqxhr ) {
-        jqxhr.done(function() {
-            dodisplay();
-        //          htmlcontent+="</table></div>";
-                htmlcontent+="</div>";
-                console.log(htmlcontent);
-            $("#editInfo").after(htmlcontent);
-                $(".radio").click(function(){
-                  // Holds the product ID of the clicked element
-                  var url = $(this).attr('url');
-                  console.log('thingindex ' + thingindex + ' plays: ' + url);
-		  $.post(returnURL,
-                	{useajax: "doaction", id: thingindex, type: "music", value: url, attr: "music-tunein", subid: 0, hubnum: hubnum},
-	          	function (presult, pstatus) {
-                  		if (pstatus==="success" ) {
-                  		}
-            	 	}
-        	);
-
-
-
-
-
-                  closeModal();
-                });
-//            tileCount++;
-//            setupClicks(str_type, thingindex);
-        });
-    } else {
-        dodisplay();
-        $("#editInfo").after(htmlcontent);
-        tileCount++;
-        setupClicks(str_type, thingindex);
-    }
-
-}
-
 // setup trigger for clicking on the action portion of this thing
 // this used to be done by page but now it is done by sensor type
 function setupPage(trigger) {
-
-    $(".radiobtn").click(function(){
-        var aid = $(this).attr("aid");
-        var theclass = $(this).attr("class");
-        var subid = $(this).attr("subid");
-
-
-        // avoid doing click if the target was the title bar
-        // or if not in Operate mode; also skip sliders tied to subid === level
-        if ( aid===undefined || priorOpmode!=="Operate" || modalStatus ||
-             subid==="level" ||
-             ( $(this).attr("id") && $(this).attr("id").startsWith("s-") ) ) return;
-
-        var tile = '#t-'+aid;
-        var bid = $(tile).attr("bid");
-        var hubnum = $(tile).attr("hub");
-        console.log('tile: ' + tile + ' bid: ' + bid + ' hubnum: ' + hubnum);
-        tuneInList('whocares', bid, '', hubnum, '');
-    });
     $("div.overlay > div").off("click.tileactions");
     $("div.overlay > div").on("click.tileactions", function(event) {
-        //reset Hub Update due to quick websocket updates. 
+        //reset Hub background update due to quick websocket updates. 
         $.each(allHubs, function (hubnum, hub) {
             clearTimeout(hub.jsTimer);
             hub.jsTimer = setTimeout(function() {hub.myMethod();}, hub[1]);
