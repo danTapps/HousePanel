@@ -143,8 +143,6 @@ $(document).ready(function() {
         if ( hubs && typeof hubs === "object" ) {
             // loop through every hub
             allHubs = [];
-            setupWebsocketUpdate();
-            setInterval(wsSocketCheck, 5000);
             $.each(hubs, function (hubnum, hub) {
                 var hubType = hub.hubType;
                 var timerval = st_timer;
@@ -152,7 +150,9 @@ $(document).ready(function() {
                     timerval = he_timer;
                 }
                 if ( timerval && timerval >= 1000 ) {
-                    setupTimer(timerval, "all", hubnum);
+                    setupTimer(timerval, "all", hubnum, hub.webSocketAddress);
+                    if (allHubs.length > 0)
+                        setInterval(wsSocketCheck, 5000);
                 }
             });
         }
@@ -1555,14 +1555,15 @@ function getPresultValue(presult, bid) {
     return null;
 }
 
-function setupWebsocketUpdate()
+function setupWebsocketUpdate(wsSocket, webSocketAddress)
 {
+    console.log ('setupWebsocketUpdate ' + webSocketAddress);
     if (wsSocket)
         return;   
-    wsSocket = new WebSocket("ws://192.168.10.63:1337");
-    wsSocket.onopen = function(){
+    var wsNewSocket = new WebSocket(webSocketAddress);
+    wsNewSocket.onopen = function(){
     }
-    wsSocket.onmessage = function (event) {
+    wsNewSocket.onmessage = function (event) {
         var presult = JSON.parse(event.data);
 
         $('div.panel div.thing').each(function() {
@@ -1595,24 +1596,32 @@ function setupWebsocketUpdate()
             }
         });
     }
-    wsSocket.onclose = function(){
-        wsSocketCheck()
-    }
-    wsSocket.onclose = function(){
+    wsNewSocket.onclose = function(){
         // Try to reconnect in 5 seconds
         setTimeout(function(){wsSocketCheck()}, 5000);
     };
+    return wsNewSocket;
 }
 function wsSocketCheck()
 {
-    if(!wsSocket || wsSocket.readyState==3)
-    {
-        wsSocket = null;
-        setupWebsocketUpdate();
-        
-    }
+    $.each(allHubs, function (hubnum, hub) {
+        try
+        {
+            if (hub.webSocketAddress.length)
+            {
+                if (!hub.wsSocket || hub.wsSocket.readyState==3)
+                {
+                    hub.wsSocket = null;
+                    hub.wsSocket = setupWebsocketUpdate(null, hub.webSocketAddress);
+                }
+            }
+        } 
+        catch (e)
+        {
+        }
+    });    
 }
-function setupTimer(timerval, timertype, hubnum) {
+function setupTimer(timerval, timertype, hubnum, webSocketAddress = "") {
 
         // console.log("hub #" + hubnum + " timer = " + timerval);
         var updarray = [timertype, timerval, hubnum];
@@ -1701,8 +1710,15 @@ function setupTimer(timerval, timertype, hubnum) {
           // This provides a better UI experience with Websockets as you might get a "wrong" status with the background update first
           updarray.jsTimer = setTimeout(function() {updarray.myMethod();}, timerval);
         }
-        //No remember all of this for websocket checks
-        allHubs.push(updarray);
+        if ((hubnum !== -1 ) && (webSocketAddress.length > 0))
+        {
+            //start Websocket client
+            updarray.wsSocket = null;
+            updarray.wsSocket = setupWebsocketUpdate(updarray.wsSocket, webSocketAddress);
+            updarray.webSocketAddress = webSocketAddress;
+            //Now remember all hubs for websocket checks
+            allHubs.push(updarray);
+        }
         
 //    });
     

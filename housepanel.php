@@ -640,7 +640,7 @@ function getAuthPage($returl, $hpcode, $hubset=null, $newthings=null) {
         $newhub = array("hubType"=>"New", "hubHost"=>"https://graph.api.smartthings.com", 
                         "clientId"=>"", "clientSecret"=>"",
                         "userAccess"=>"", "userEndpt"=>"", "hubName"=>"", "hubId"=>1,
-                        "hubAccess"=>"", "hubEndpt"=>"");
+                        "hubAccess"=>"", "hubEndpt"=>"","webSocketAddress"=>"" );
         
         // handle legacy hmoptions files that have the old setup without arrays
         // this will only work once - the first time used
